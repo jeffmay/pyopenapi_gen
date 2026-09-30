@@ -65,7 +65,15 @@ class IRSchemaSerializer:
               referenced with ``$ref`` rather than copied inline
     """
 
-    def __init__(self, named_schemas: Sequence[IRSchema]) -> None:
+    def __init__(self, named_schemas: Sequence[IRSchema], keep_json_names: bool = False) -> None:
+        """
+        Args:
+            named_schemas: The schemas to serialise as definitions.
+            keep_json_names: When False (dataclass models) object properties are renamed to their Python
+                attribute names in the document and the mapping back is reported in ``field_mappings``.
+                When True (pydantic models) the document keeps the JSON keys, and the caller passes
+                ``field_mappings`` to DCG as aliases so it emits ``Field(alias=...)``.
+        """
         names = [s.generation_name for s in named_schemas]
         assert all(
             names
@@ -75,6 +83,7 @@ class IRSchemaSerializer:
         ), "generation_name values must be unique"  # nosec B101 - design-by-contract precondition; must stay active
 
         self._schemas = list(named_schemas)
+        self._keep_json_names = keep_json_names
         self._names_by_id: dict[int, str] = {id(s): s.generation_name for s in named_schemas if s.generation_name}
         self._names_by_ir_name = self._unambiguous_ir_names(named_schemas)
         self._stack: set[int] = set()
@@ -238,12 +247,12 @@ class IRSchemaSerializer:
                 default = self._optional_field_default(prop, is_reference=self._definition_name(prop) is not None)
                 if default is not _NO_DEFAULT:
                     node["default"] = default
-            properties[python_name] = node
+            properties[api_name if self._keep_json_names else python_name] = node
 
         self._field_names[owner] = [python for _, python in ordered]
         self._field_mappings[owner] = {api: py for api, py in ordered if api != py}
         body: dict[str, Any] = {"type": "object", "properties": properties}
-        required = [py for api, py in ordered if api in schema.required]
+        required = [api if self._keep_json_names else py for api, py in ordered if api in schema.required]
         if required:
             body["required"] = required
         return body

@@ -35,6 +35,17 @@ class ModelBackend(str, Enum):
     """datamodel-code-generator, fed a JSON Schema document built from the IR."""
 
 
+@unique
+class ModelType(str, Enum):
+    """The kind of class generated for object schemas (only configurable with the ``dcg`` model backend)."""
+
+    DATACLASS = "dataclass"
+    """Standard-library ``@dataclass`` models, (un)structured by the generated cattrs runtime."""
+
+    PYDANTIC = "pydantic"
+    """Pydantic v2 ``BaseModel`` models; the generated client then requires ``pydantic>=2`` at runtime."""
+
+
 @dataclass
 class IRDiscriminator:
     """

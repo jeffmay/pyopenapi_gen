@@ -4,7 +4,7 @@ import typer
 
 from .core.spec_fetcher import is_url
 from .generator.client_generator import ClientGenerator, GenerationError
-from .ir import ModelBackend, NamingStrategy
+from .ir import ModelBackend, ModelType, NamingStrategy
 
 
 def main(
@@ -49,11 +49,22 @@ def main(
             "'dcg' (experimental) renders models with datamodel-code-generator."
         ),
     ),
+    model_type: ModelType = typer.Option(
+        ModelType.DATACLASS,
+        "--model-type",
+        help=(
+            "Kind of class generated for object schemas; requires '--model-backend dcg' for anything but "
+            "'dataclass'. 'dataclass' (default) generates standard-library dataclasses. "
+            "'pydantic' generates pydantic v2 models; the generated client then requires 'pydantic>=2'."
+        ),
+    ),
 ) -> None:
     """
     Generate a Python OpenAPI client from a spec file or URL.
     Only parses CLI arguments and delegates to ClientGenerator.
     """
+    if model_type is ModelType.PYDANTIC and model_backend is not ModelBackend.DCG:
+        raise typer.BadParameter("'--model-type pydantic' requires '--model-backend dcg'.", param_hint="--model-type")
     if core_package is None:
         core_package = output_package + ".core"
     generator = ClientGenerator()
@@ -69,6 +80,7 @@ def main(
             core_package=core_package,
             naming_strategy=naming_strategy,
             model_backend=model_backend,
+            model_type=model_type,
         )
         typer.echo("Client generation complete.")
     except GenerationError as e:

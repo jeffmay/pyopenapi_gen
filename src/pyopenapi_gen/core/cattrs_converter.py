@@ -414,6 +414,69 @@ def _unstructure_unresolved_forward_ref(_: Any) -> Callable[[Any], Any]:
 converter.register_unstructure_hook_factory(lambda t: isinstance(t, ForwardRef), _unstructure_unresolved_forward_ref)
 
 
+# --- pydantic support -------------------------------------------------------------------------------
+# Clients generated with ``--model-type pydantic`` use pydantic v2 models. The helpers below detect
+# them by class hierarchy and never import pydantic unless a pydantic type is actually involved, so
+# dataclass clients keep working without pydantic installed.
+
+_pydantic_adapters: dict[Any, Any] = {}
+
+
+def _is_pydantic_model_class(tp: Any) -> bool:
+    """Return True if ``tp`` is a pydantic ``BaseModel`` subclass (detected without importing pydantic)."""
+    return isinstance(tp, type) and any(
+        base.__name__ == "BaseModel" and base.__module__.startswith("pydantic") for base in tp.__mro__
+    )
+
+
+def is_pydantic_model(value: Any) -> bool:
+    """Return True if ``value`` is an instance (not the class) of a pydantic ``BaseModel``."""
+    return not isinstance(value, type) and _is_pydantic_model_class(type(value))
+
+
+def _needs_pydantic(tp: Any) -> bool:
+    """
+    Return True if structuring ``tp`` must be done by pydantic instead of cattrs.
+
+    That is the case for a pydantic model, for a ``TypeAliasType`` (how pydantic-flavoured clients
+    declare union and array aliases, which cattrs cannot see through), and for any generic
+    or union type that contains one of these.
+    """
+    if _is_pydantic_model_class(tp) or type(tp).__name__ == "TypeAliasType":
+        return True
+    return any(_needs_pydantic(arg) for arg in get_args(tp))
+
+
+def _unstructure_pydantic_model(model: Any) -> Any:
+    """Dump a pydantic model to JSON-ready data using its aliases (the wire names), omitting ``None`` values."""
+    return model.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
+def _structure_with_pydantic(data: Any, cls: Any) -> Any:
+    """
+    Validate ``data`` as ``cls`` with a cached pydantic ``TypeAdapter``.
+
+    Raises:
+        ValueError: with the same "Failed to convert data to ..." shape as the cattrs path when validation fails.
+    """
+    from pydantic import TypeAdapter, ValidationError
+
+    try:
+        adapter = _pydantic_adapters.get(cls)
+        if adapter is None:
+            adapter = _pydantic_adapters[cls] = TypeAdapter(cls)
+    except TypeError:  # unhashable annotation metadata: build a one-off adapter
+        adapter = TypeAdapter(cls)
+    try:
+        return adapter.validate_python(data)
+    except ValidationError as exc:
+        details = "\n".join(f"- {'.'.join(str(part) for part in err['loc'])}: {err['msg']}" for err in exc.errors())
+        raise ValueError(f"Failed to convert data to {getattr(cls, '__name__', cls)}:\n{details}") from exc
+
+
+converter.register_unstructure_hook_func(_is_pydantic_model_class, _unstructure_pydantic_model)
+
+
 # =============================================================================
 # Union Type Structure Hook
 # =============================================================================
@@ -858,6 +921,9 @@ def structure_from_dict(data: Any, cls: type[T]) -> T:
     Returns:
         Instance of cls
     """
+    if _needs_pydantic(cls):
+        return _structure_with_pydantic(data, cls)  # type: ignore[no-any-return]
+
     # Register structure hooks for this dataclass and all nested dataclasses
     if dataclasses.is_dataclass(cls):
         _register_structure_hooks_recursively(cls)
@@ -985,6 +1051,7 @@ __all__ = [
     "converter",
     "structure_from_dict",
     "unstructure_to_dict",
+    "is_pydantic_model",
     "structure_with_base64_bytes",
     "unstructure_bytes_to_base64",
     "structure_datetime",
