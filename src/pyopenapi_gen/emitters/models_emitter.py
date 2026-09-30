@@ -8,7 +8,7 @@ from pyopenapi_gen.core.loader.schemas.extractor import extract_inline_array_ite
 from pyopenapi_gen.core.utils import NameSanitizer
 from pyopenapi_gen.core.writers.code_writer import CodeWriter
 from pyopenapi_gen.emitters.dcg_models.renderer import DcgModelRenderer
-from pyopenapi_gen.ir import ModelBackend
+from pyopenapi_gen.ir import ModelBackend, ModelType
 from pyopenapi_gen.visit.model.model_visitor import ModelVisitor
 
 # Removed OPENAPI_TO_PYTHON_TYPES, FORMAT_TYPE_MAPPING, and MODEL_TEMPLATE constants
@@ -38,8 +38,13 @@ class ModelsEmitter:
         parsed_schemas: dict[str, IRSchema],
         discriminator_skip_list: set[str] | None = None,
         model_backend: ModelBackend = ModelBackend.LEGACY,
+        model_type: ModelType = ModelType.DATACLASS,
     ):
+        assert (
+            model_type is ModelType.DATACLASS or model_backend is ModelBackend.DCG
+        ), "pydantic models require the dcg model backend"  # nosec B101 - design-by-contract precondition
         self.model_backend: ModelBackend = model_backend
+        self.model_type: ModelType = model_type
         self.context: RenderContext = context
         # Store a reference to the schemas that were passed in.
         # These schemas will have their .generation_name and .final_module_stem updated.
@@ -520,7 +525,7 @@ class ModelsEmitter:
         skipped_ids = {id(s) for s in skipped}
         to_render = [s for s in named_schemas if id(s) not in skipped_ids]
 
-        rendered = DcgModelRenderer().render(to_render)
+        rendered = DcgModelRenderer(self.model_type).render(to_render)
         if rendered.anonymous_objects_flattened:
             logger.warning(
                 f"{rendered.anonymous_objects_flattened} anonymous inline object(s) were rendered as "

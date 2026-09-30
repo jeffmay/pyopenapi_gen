@@ -10,6 +10,7 @@ import pytest
 from pyopenapi_gen import IRSchema
 from pyopenapi_gen.emitters.dcg_models.renderer import DcgModelRenderer, ModelLocation
 from pyopenapi_gen.generator.exceptions import GenerationError
+from pyopenapi_gen.ir import ModelType
 
 
 def _named(name: str, **kwargs: Any) -> IRSchema:
@@ -93,6 +94,64 @@ def test_render__alias_schema__emitted_as_type_alias_not_pep695_statement() -> N
     source = result.files[f"{result.locations['Ids'].module_stem}.py"]
     assert "Ids: TypeAlias = list[int]" in source
     assert "\ntype Ids" not in source
+
+
+class TestPydanticModels:
+    @staticmethod
+    def _render() -> tuple[dict[str, str], dict[str, Any]]:
+        result = DcgModelRenderer(ModelType.PYDANTIC).render(_pet_and_status())
+        return result.files, result.locations
+
+    def test_render__pydantic__object_is_base_model_with_python_names_and_wire_aliases(self) -> None:
+        files, locations = self._render()
+
+        source = files[f"{locations['Pet'].module_stem}.py"]
+        assert "class Pet(BaseModel)" in source
+        assert "@dataclass" not in source
+        assert "populate_by_name=True" in source  # callers can construct with Python names
+        assert "created_at:" in source
+        assert "alias='createdAt'" in source or 'alias="createdAt"' in source
+
+    def test_render__pydantic__same_locations_as_dataclass(self) -> None:
+        _, pydantic_locations = self._render()
+
+        dataclass_locations = DcgModelRenderer().render(_pet_and_status()).locations
+
+        assert pydantic_locations == dataclass_locations
+
+    def test_render__pydantic__optional_array_is_plain_list_with_empty_default(self) -> None:
+        files, locations = self._render()
+
+        assert "tags: list[str] = []" in files[f"{locations['Pet'].module_stem}.py"]
+
+    def test_render__pydantic__enum_keeps_legacy_member_names(self) -> None:
+        files, locations = self._render()
+
+        source = files[f"{locations['PetStatus'].module_stem}.py"]
+        assert "class PetStatus(str, Enum)" in source
+        assert "SOLD_OUT" in source
+
+    def test_render__pydantic__no_dataclass_meta_block(self) -> None:
+        files, locations = self._render()
+
+        assert "class Meta" not in files[f"{locations['Pet'].module_stem}.py"]
+
+    def test_render__pydantic_attribute_renamed_by_dcg__generation_fails_loudly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Given DCG reporting a different attribute name than the serializer chose
+        original = DcgModelRenderer._run_dcg
+
+        def patched(self: DcgModelRenderer, serialized: Any) -> Any:
+            modules, metadata = original(self, serialized)
+            metadata = copy.deepcopy(metadata)
+            next(m for m in metadata if m["class_name"] == "Pet")["fields"][0]["name"] = "renamed"
+            return modules, metadata
+
+        monkeypatch.setattr(DcgModelRenderer, "_run_dcg", patched)
+
+        with pytest.raises(GenerationError, match="changed attribute names"):
+            DcgModelRenderer(ModelType.PYDANTIC).render(_pet_and_status())
 
 
 class TestContractViolations:

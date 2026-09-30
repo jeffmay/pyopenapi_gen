@@ -27,7 +27,7 @@ from datamodel_code_generator.enums import DataModelType
 from datamodel_code_generator.format import DatetimeClassType, Formatter, PythonVersion
 
 from pyopenapi_gen.generator.exceptions import GenerationError
-from pyopenapi_gen.ir import IRSchema
+from pyopenapi_gen.ir import IRSchema, ModelType
 
 from .ir_to_openapi import IRSchemaSerializer, SerializedModels
 
@@ -69,11 +69,15 @@ class DcgModelRenderer:
         Postconditions:
             - ``locations`` has exactly one entry per requested schema, and each class is named
               exactly ``generation_name``
-            - every attribute of every generated dataclass has the Python name the serializer chose,
-              so the rendered ``Meta`` mappings are consistent with the class body
+            - every attribute of every generated model has the Python name the serializer chose, so the
+              rendered ``Meta`` mappings (dataclass) or ``Field`` aliases (pydantic) match the class body
         Raises:
             GenerationError: when DCG renames a class or attribute, or omits a requested model
     """
+
+    def __init__(self, model_type: ModelType = ModelType.DATACLASS) -> None:
+        """``model_type`` selects dataclass or pydantic output; names and attribute names are the same for both."""
+        self._model_type = model_type
 
     def render(self, schemas: Sequence[IRSchema]) -> RenderedModels:
         """
@@ -84,7 +88,7 @@ class DcgModelRenderer:
         if not schemas:
             return RenderedModels(files={}, locations={})
 
-        serialized = IRSchemaSerializer(schemas).serialize()
+        serialized = IRSchemaSerializer(schemas, keep_json_names=self._model_type is ModelType.PYDANTIC).serialize()
         modules, metadata = self._run_dcg(serialized)
         locations = self._locate_models(serialized, metadata)
         self._verify_field_names(serialized, metadata)
@@ -94,15 +98,35 @@ class DcgModelRenderer:
             files=files, locations=locations, anonymous_objects_flattened=serialized.anonymous_objects_flattened
         )
 
-    def _run_dcg(self, serialized: SerializedModels) -> tuple[GeneratedModules, list[dict[str, Any]]]:
+    def _model_type_options(self, serialized: SerializedModels) -> dict[str, Any]:
+        """The DCG options that differ between dataclass and pydantic output."""
+        if self._model_type is ModelType.PYDANTIC:
+            # The document keeps JSON keys; scoped aliases (``Class.jsonKey``) give DCG the Python attribute
+            # names, which it renders as ``python_name: T = Field(..., alias="jsonKey")``.
+            return {
+                "output_model_type": DataModelType.PydanticV2BaseModel,
+                "allow_population_by_field_name": True,
+                "strict_nullable": True,
+                "aliases": {
+                    f"{cls}.{key}": name
+                    for cls, mapping in serialized.field_mappings.items()
+                    for key, name in mapping.items()
+                },
+            }
         extra_template_data = {name: {"field_mappings": m} for name, m in serialized.field_mappings.items() if m}
+        return {
+            "output_model_type": DataModelType.DataclassesDataclass,
+            "custom_template_dir": _TEMPLATE_DIR,
+            "extra_template_data": extra_template_data,
+        }
+
+    def _run_dcg(self, serialized: SerializedModels) -> tuple[GeneratedModules, list[dict[str, Any]]]:
         with tempfile.TemporaryDirectory() as scratch:
             metadata_path = Path(scratch) / "metadata.json"
             result = generate(
                 serialized.document,
                 input_file_type=InputFileType.OpenAPI,
                 openapi_scopes=[OpenAPIScope.Schemas],
-                output_model_type=DataModelType.DataclassesDataclass,
                 # Emit 3.10-compatible syntax: `X: TypeAlias = A | B`, not a PEP 695 `type X = ...`
                 # statement, which cattrs cannot see through when (un)structuring union members.
                 target_python_version=PythonVersion.PY_310,
@@ -114,12 +138,11 @@ class DcgModelRenderer:
                 use_specialized_enum=False,
                 set_default_enum_member=True,
                 output_datetime_class=DatetimeClassType.Datetime,
-                custom_template_dir=_TEMPLATE_DIR,
-                extra_template_data=extra_template_data,  # type: ignore[arg-type]
                 formatters=[Formatter.BUILTIN],  # PostprocessManager formats the final files
                 custom_file_header=_FILE_HEADER,
                 disable_timestamp=True,
                 emit_model_metadata=metadata_path,
+                **self._model_type_options(serialized),
             )
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))["models"]
         if not isinstance(result, dict):
