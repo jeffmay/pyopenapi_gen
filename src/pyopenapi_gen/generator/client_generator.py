@@ -23,7 +23,7 @@ from pyopenapi_gen.emitters.exceptions_emitter import ExceptionsEmitter
 from pyopenapi_gen.emitters.mocks_emitter import MocksEmitter
 from pyopenapi_gen.emitters.models_emitter import ModelsEmitter
 from pyopenapi_gen.generator.exceptions import GenerationError
-from pyopenapi_gen.ir import NamingStrategy
+from pyopenapi_gen.ir import ModelBackend, NamingStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,7 @@ class ClientGenerator:
         no_postprocess: bool = False,
         core_package: str | None = None,
         naming_strategy: NamingStrategy = NamingStrategy.OPERATION_ID,
+        model_backend: ModelBackend = ModelBackend.LEGACY,
     ) -> List[Path]:
         """Generate the client code from the OpenAPI spec.
 
@@ -103,6 +104,7 @@ class ClientGenerator:
             no_postprocess: Skip post-processing (type checking, etc.).
             core_package: Python package path for the core package.
             naming_strategy: Strategy for deriving method names from operations.
+            model_backend: Which implementation renders the ``models/`` package.
 
         Raises:
             GenerationError: If generation fails or diffs are found (when not forcing overwrite).
@@ -241,6 +243,7 @@ class ClientGenerator:
                     context=tmp_render_context_for_diff,
                     parsed_schemas=ir.schemas,
                     discriminator_skip_list=ir.discriminator_skip_list,
+                    model_backend=model_backend,
                 )
                 model_files_dict = models_emitter.emit(
                     ir, str(tmp_out_dir_for_diff)
@@ -413,6 +416,7 @@ class ClientGenerator:
                 context=main_render_context,
                 parsed_schemas=ir.schemas,
                 discriminator_skip_list=ir.discriminator_skip_list,
+                model_backend=model_backend,
             )
             model_files_dict = models_emitter.emit(ir, str(out_dir))
             generated_files += [

@@ -7,11 +7,21 @@ from pyopenapi_gen.context.render_context import RenderContext
 from pyopenapi_gen.core.loader.schemas.extractor import extract_inline_array_items, extract_inline_enums
 from pyopenapi_gen.core.utils import NameSanitizer
 from pyopenapi_gen.core.writers.code_writer import CodeWriter
+from pyopenapi_gen.emitters.dcg_models.renderer import DcgModelRenderer
+from pyopenapi_gen.ir import ModelBackend
 from pyopenapi_gen.visit.model.model_visitor import ModelVisitor
 
 # Removed OPENAPI_TO_PYTHON_TYPES, FORMAT_TYPE_MAPPING, and MODEL_TEMPLATE constants
 
 logger = logging.getLogger(__name__)
+
+
+def _str_alias_source(class_name: str) -> str:
+    """Source of a module that only aliases ``class_name`` to ``str`` (mirrors the legacy empty-model fallback)."""
+    return (
+        f"from __future__ import annotations\n\nfrom typing import TypeAlias\n\n"
+        f'__all__ = ["{class_name}"]\n\n{class_name}: TypeAlias = str\n'
+    )
 
 
 class ModelsEmitter:
@@ -27,7 +37,9 @@ class ModelsEmitter:
         context: RenderContext,
         parsed_schemas: dict[str, IRSchema],
         discriminator_skip_list: set[str] | None = None,
+        model_backend: ModelBackend = ModelBackend.LEGACY,
     ):
+        self.model_backend: ModelBackend = model_backend
         self.context: RenderContext = context
         # Store a reference to the schemas that were passed in.
         # These schemas will have their .generation_name and .final_module_stem updated.
@@ -391,6 +403,9 @@ class ModelsEmitter:
             # )
         # --- End of Name de-collision ---
 
+        if self.model_backend is ModelBackend.DCG:
+            return self._emit_with_dcg(models_dir, init_path, schemas_to_name_decollision)
+
         generated_files = []
         # Iterate using the keys from `all_schemas_for_generation` as it's the definitive list.
         all_schema_keys_to_emit = list(all_schemas_for_generation.keys())
@@ -479,9 +494,58 @@ class ModelsEmitter:
                 f"Remaining: {set(all_schema_keys_to_emit) - processed_schema_original_keys}."
             )
 
-        init_content = self._generate_init_py_content()
-        init_path.write_text(init_content, encoding="utf-8")
+        self._write_package_files(models_dir, init_path)
+        return {"models": generated_files}
+
+    def _write_package_files(self, models_dir: Path, init_path: Path) -> None:
+        """Write ``models/__init__.py`` (re-exporting every model) and the ``py.typed`` marker."""
+        init_path.write_text(self._generate_init_py_content(), encoding="utf-8")
         # py.typed file to indicate type information is available
         (models_dir / "py.typed").write_text("")  # Ensure empty content, encoding defaults to utf-8
 
+    def _emit_with_dcg(self, models_dir: Path, init_path: Path, named_schemas: List[IRSchema]) -> dict[str, List[str]]:
+        """
+        Render ``named_schemas`` with datamodel-code-generator instead of ``ModelVisitor``.
+
+        Runs after name de-collision so every schema already has a ``generation_name``. The module
+        each model lands in is chosen by DCG, so ``final_module_stem`` is overwritten from its
+        metadata before any endpoint code imports the model.
+
+        Contracts:
+            Postconditions:
+                - every schema in ``named_schemas`` has a ``final_module_stem`` naming a file in ``models_dir``
+                - ``models/__init__.py`` and ``py.typed`` exist
+        """
+        skipped = [s for s in named_schemas if s.enum and s.name in self.discriminator_skip_list]
+        skipped_ids = {id(s) for s in skipped}
+        to_render = [s for s in named_schemas if id(s) not in skipped_ids]
+
+        rendered = DcgModelRenderer().render(to_render)
+        if rendered.anonymous_objects_flattened:
+            logger.warning(
+                f"{rendered.anonymous_objects_flattened} anonymous inline object(s) were rendered as "
+                f"dict[str, Any] because they have no model class."
+            )
+
+        for schema in to_render:
+            assert (
+                schema.generation_name is not None
+            )  # nosec B101 - type narrowing; generation_name is set by name de-collision
+            schema.final_module_stem = rendered.locations[schema.generation_name].module_stem
+
+        generated_files = [self._write_model_file(models_dir / name, source) for name, source in rendered.files.items()]
+        for schema in skipped:
+            path = models_dir / f"{schema.final_module_stem}.py"
+            if path.exists():
+                logger.error(f"Skipped discriminator enum '{schema.name}' would overwrite {path.name}; not writing it.")
+                continue
+            generated_files.append(self._write_model_file(path, _str_alias_source(schema.generation_name or "")))
+
+        self._write_package_files(models_dir, init_path)
         return {"models": generated_files}
+
+    def _write_model_file(self, path: Path, source: str) -> str:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+        self.context.mark_generated_module(str(path))
+        return str(path)
