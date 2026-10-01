@@ -24,6 +24,17 @@ class NamingStrategy(str, Enum):
     PATH = "path"
 
 
+@unique
+class ModelBackend(str, Enum):
+    """Which implementation renders the ``models/`` package."""
+
+    LEGACY = "legacy"
+    """The built-in ``ModelVisitor`` generators."""
+
+    DCG = "dcg"
+    """datamodel-code-generator, fed a JSON Schema document built from the IR."""
+
+
 @dataclass
 class IRDiscriminator:
     """

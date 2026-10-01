@@ -4,7 +4,7 @@ import typer
 
 from .core.spec_fetcher import is_url
 from .generator.client_generator import ClientGenerator, GenerationError
-from .ir import NamingStrategy
+from .ir import ModelBackend, NamingStrategy
 
 
 def main(
@@ -40,6 +40,15 @@ def main(
             "'path' ignores operationId and derives names from the HTTP method and path."
         ),
     ),
+    model_backend: ModelBackend = typer.Option(
+        ModelBackend.LEGACY,
+        "--model-backend",
+        help=(
+            "Implementation that renders the models package. "
+            "'legacy' (default) uses the built-in generators. "
+            "'dcg' (experimental) renders models with datamodel-code-generator."
+        ),
+    ),
 ) -> None:
     """
     Generate a Python OpenAPI client from a spec file or URL.
@@ -59,6 +68,7 @@ def main(
             no_postprocess=no_postprocess,
             core_package=core_package,
             naming_strategy=naming_strategy,
+            model_backend=model_backend,
         )
         typer.echo("Client generation complete.")
     except GenerationError as e:
