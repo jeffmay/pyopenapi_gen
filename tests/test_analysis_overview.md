@@ -53,6 +53,7 @@ tests/
 │   │   ├── test_code_writer.py (Analyzed)
 │   │   ├── test_documentation_writer.py (Analyzed)
 │   │   └── test_line_writer.py (Analyzed)
+│   ├── test_cattrs_converter_pydantic.py (Analyzed)
 │   ├── test_detect_circular_imports.py (Analyzed)
 │   ├── test_exceptions_module.py (Analyzed)
 │   ├── test_forward_references.py (Analyzed)

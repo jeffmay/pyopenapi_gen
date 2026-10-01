@@ -148,6 +148,27 @@ class TestObjects:
         assert "properties" not in _definitions(result)["Outer"]["properties"]["inner"]
 
 
+class TestKeepJsonNames:
+    def test_keep_json_names__document_keeps_wire_keys_but_reports_python_names(self) -> None:
+        # Given a model whose keys need sanitising (the pydantic flavour maps them back with aliases)
+        pet = _named(
+            "Pet",
+            type="object",
+            required=["id", "createdAt"],
+            properties={"id": IRSchema(type="integer"), "createdAt": IRSchema(type="string", format="date-time")},
+        )
+
+        # When
+        result = IRSchemaSerializer([pet], keep_json_names=True).serialize()
+
+        # Then the document uses JSON keys (DCG derives the alias from them) ...
+        assert set(_definitions(result)["Pet"]["properties"]) == {"id", "createdAt"}
+        assert set(_definitions(result)["Pet"]["required"]) == {"id", "createdAt"}
+        # ... while the expected attribute names and the key -> name mapping are unchanged
+        assert sorted(result.field_names["Pet"]) == ["created_at", "id_"]
+        assert result.field_mappings["Pet"] == {"id": "id_", "createdAt": "created_at"}
+
+
 class TestNullability:
     def test_nullable_primitive__type_list_includes_null(self) -> None:
         holder = _named("Holder", type="object", properties={"n": IRSchema(type="string", is_nullable=True)})
