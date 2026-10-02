@@ -551,3 +551,87 @@ class TestCliFlag:
         )
 
         assert result.exit_code == 0, result.output
+
+    def test_cli__model_python_preset_with_dcg__generates_models(self, tmp_path: Path, spec_file: Path) -> None:
+        """
+        Scenario:
+            The CLI is invoked with ``--model-backend dcg --preset standard-py310-20260909``.
+
+        Expected Outcome:
+            Exit code 0 and the models package is generated.
+        """
+        result = CliRunner().invoke(
+            app,
+            [
+                str(spec_file),
+                "--project-root",
+                str(tmp_path),
+                "--output-package",
+                "client",
+                "--model-backend",
+                "dcg",
+                "--preset",
+                "standard-py310-20260909",
+                "--force",
+                "--no-postprocess",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "class Pet" in (tmp_path / "client" / "models" / "pet.py").read_text()
+
+    @pytest.mark.parametrize("backend_args", [[], ["--model-backend", "legacy"]])
+    def test_cli__model_python_preset_without_dcg__rejected_with_usage_error(
+        self, tmp_path: Path, spec_file: Path, backend_args: list[str]
+    ) -> None:
+        """
+        Scenario:
+            ``--preset`` is passed without ``--model-backend dcg`` (omitted or explicitly legacy).
+
+        Expected Outcome:
+            A usage error (exit code 2) naming the requirement, and nothing is generated.
+        """
+        result = CliRunner().invoke(
+            app,
+            [
+                str(spec_file),
+                "--project-root",
+                str(tmp_path),
+                "--output-package",
+                "client",
+                "--preset",
+                "standard-py310-20260909",
+            ]
+            + backend_args,
+        )
+
+        assert result.exit_code == 2
+        assert "requires" in result.output and "dcg" in result.output
+        assert not (tmp_path / "client").exists()
+
+    def test_cli__unknown_model_python_preset__rejected_with_usage_error(self, tmp_path: Path, spec_file: Path) -> None:
+        """
+        Scenario:
+            ``--preset`` names a preset that datamodel-code-generator does not provide.
+
+        Expected Outcome:
+            A usage error (exit code 2) and nothing is generated.
+        """
+        result = CliRunner().invoke(
+            app,
+            [
+                str(spec_file),
+                "--project-root",
+                str(tmp_path),
+                "--output-package",
+                "client",
+                "--model-backend",
+                "dcg",
+                "--preset",
+                "nope",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "Unknown preset" in result.output
+        assert not (tmp_path / "client").exists()
