@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import typer
+from datamodel_code_generator.preset import PresetName
+
+from pyopenapi_gen.emitters.models_emitter import DEFAULT_PYTHON_MODEL_PRESET
 
 from .core.spec_fetcher import is_url
 from .generator.client_generator import ClientGenerator, GenerationError
@@ -58,6 +61,17 @@ def main(
             "'pydantic' generates pydantic v2 models; the generated client then requires 'pydantic>=2'."
         ),
     ),
+    model_python_preset: PresetName | None = typer.Option(
+        None,
+        "--model-python-preset",
+        help=(
+            "Name of a datamodel-code-generator built-in preset (its '--preset' option), e.g. "
+            "'standard-py310-20260909'; requires '--model-backend dcg', which defaults to "
+            f"'{DEFAULT_PYTHON_MODEL_PRESET.value}'. The preset's Python version replaces the default 3.10 "
+            "target; options this tool fixes take precedence over the preset."
+        ),
+        autocompletion=lambda: tuple(e.value for e in PresetName),
+    ),
 ) -> None:
     """
     Generate a Python OpenAPI client from a spec file or URL.
@@ -65,6 +79,10 @@ def main(
     """
     if model_type is ModelType.PYDANTIC and model_backend is not ModelBackend.DCG:
         raise typer.BadParameter("'--model-type pydantic' requires '--model-backend dcg'.", param_hint="--model-type")
+    if model_python_preset is not None and model_backend is not ModelBackend.DCG:
+        raise typer.BadParameter(
+            "'--model-python-preset' requires '--model-backend dcg'.", param_hint="--model-python-preset"
+        )
     if core_package is None:
         core_package = output_package + ".core"
     generator = ClientGenerator()
@@ -81,6 +99,7 @@ def main(
             naming_strategy=naming_strategy,
             model_backend=model_backend,
             model_type=model_type,
+            model_python_preset=model_python_preset,
         )
         typer.echo("Client generation complete.")
     except GenerationError as e:
