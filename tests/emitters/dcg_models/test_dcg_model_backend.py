@@ -212,7 +212,7 @@ def test_generated_dcg_client__round_trips_payload_through_cattrs_runtime(genera
     pet = converter.structure_from_dict(payload, models.Pet)
 
     assert pet.id_ == 7
-    assert pet.status is models.PetStatus.SOLD_OUT
+    assert pet.status is models.PetStatus("sold-out")
     assert pet.created_at.year == 2026
     assert pet.owner.full_name == "Ada"
     assert pet.tags == ["a", "b"]
@@ -315,7 +315,7 @@ def test_generated_pydantic_client__models_are_pydantic_with_python_names_and_wi
     sys.path.insert(0, str(root))
     try:
         models = importlib.import_module(f"{PACKAGE}.models")
-        pet = models.Pet(id_=1, status=models.PetStatus.AVAILABLE, owner=models.Owner(full_name="Ada"))
+        pet = models.Pet(id_=1, status=models.PetStatus("available"), owner=models.Owner(full_name="Ada"))
 
         assert issubclass(models.Pet, BaseModel) and not dataclasses.is_dataclass(models.Pet)
         assert isinstance(pet.status, str)
@@ -551,3 +551,87 @@ class TestCliFlag:
         )
 
         assert result.exit_code == 0, result.output
+
+    def test_cli__model_python_preset_with_dcg__generates_models(self, tmp_path: Path, spec_file: Path) -> None:
+        """
+        Scenario:
+            The CLI is invoked with ``--model-backend dcg --preset standard-py310-20260909``.
+
+        Expected Outcome:
+            Exit code 0 and the models package is generated.
+        """
+        result = CliRunner().invoke(
+            app,
+            [
+                str(spec_file),
+                "--project-root",
+                str(tmp_path),
+                "--output-package",
+                "client",
+                "--model-backend",
+                "dcg",
+                "--model-python-preset",
+                "standard-py310-20260909",
+                "--force",
+                "--no-postprocess",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "class Pet" in (tmp_path / "client" / "models" / "pet.py").read_text()
+
+    @pytest.mark.parametrize("backend_args", [[], ["--model-backend", "legacy"]])
+    def test_cli__model_python_preset_without_dcg__rejected_with_usage_error(
+        self, tmp_path: Path, spec_file: Path, backend_args: list[str]
+    ) -> None:
+        """
+        Scenario:
+            ``--model-python-preset`` is passed without ``--model-backend dcg`` (omitted or explicitly legacy).
+
+        Expected Outcome:
+            A usage error (exit code 2) naming the requirement, and nothing is generated.
+        """
+        result = CliRunner().invoke(
+            app,
+            [
+                str(spec_file),
+                "--project-root",
+                str(tmp_path),
+                "--output-package",
+                "client",
+                "--model-python-preset",
+                "standard-py310-20260909",
+            ]
+            + backend_args,
+        )
+
+        assert result.exit_code == 2
+        assert "requires" in result.output and "dcg" in result.output
+        assert not (tmp_path / "client").exists()
+
+    def test_cli__unknown_model_python_preset__rejected_with_usage_error(self, tmp_path: Path, spec_file: Path) -> None:
+        """
+        Scenario:
+            ``--model-python-preset`` names a preset that datamodel-code-generator does not provide.
+
+        Expected Outcome:
+            A usage error (exit code 2) and nothing is generated.
+        """
+        result = CliRunner().invoke(
+            app,
+            [
+                str(spec_file),
+                "--project-root",
+                str(tmp_path),
+                "--output-package",
+                "client",
+                "--model-backend",
+                "dcg",
+                "--model-python-preset",
+                "nope",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "nope" in result.output and "Invalid value" in result.output
+        assert not (tmp_path / "client").exists()
