@@ -255,6 +255,25 @@ def _build_reference_holder(
     return holder
 
 
+def _enclosing_schema_name(context: ParsingContext) -> str | None:
+    """
+    The sanitized name of the innermost named schema currently being parsed, if any.
+
+    Inline ``allOf``/``oneOf``/``anyOf`` members are parsed without a name of their own, so their
+    properties would otherwise be named from the property key alone (``status`` -> ``Status``) and
+    collide across sibling members. The enclosing schema is the name those properties should be
+    scoped by.
+
+    Contracts:
+        Postconditions:
+            - Returns None when no named schema is being parsed, otherwise a sanitized class name
+    """
+    for name in reversed(context.unified_cycle_context.schema_stack):
+        if name:
+            return NameSanitizer.sanitize_class_name(name)
+    return None
+
+
 def _parse_properties(
     properties_node: Mapping[str, Any],
     parent_schema_name: str | None,
@@ -263,8 +282,14 @@ def _parse_properties(
     max_depth_override: int | None,
     allow_self_reference: bool,
 ) -> dict[str, IRSchema]:
-    """Parses the 'properties' block of a schema node."""
+    """
+    Parses the 'properties' block of a schema node.
+
+    Synthetic names for inline enums and objects are scoped by ``parent_schema_name``, or by the
+    enclosing named schema when this block belongs to an unnamed composition member.
+    """
     parsed_props: dict[str, IRSchema] = existing_properties.copy()
+    naming_parent = parent_schema_name or _enclosing_schema_name(context)
 
     for prop_name, prop_schema_node in properties_node.items():
         if not isinstance(prop_name, str) or not prop_name:
@@ -298,9 +323,9 @@ def _parse_properties(
                 )  # Heuristic for actual object def
             )
 
-            if is_inline_object_node and parent_schema_name:
+            if is_inline_object_node and naming_parent:
                 # Promote inline object to its own schema
-                promoted_schema_name = f"{parent_schema_name}{NameSanitizer.sanitize_class_name(prop_name)}"
+                promoted_schema_name = f"{naming_parent}{NameSanitizer.sanitize_class_name(prop_name)}"
                 promoted_ir_schema = _parse_schema(
                     promoted_schema_name,
                     prop_schema_node,
@@ -400,14 +425,14 @@ def _parse_properties(
 
                 # Use a sanitized version of prop_name combined with parent schema name for unique context
                 # This ensures properties with the same name in different schemas get unique enum names
-                if parent_schema_name:
+                if naming_parent:
                     sanitized_prop_name = NameSanitizer.sanitize_class_name(prop_name)
                     # Avoid redundant prefixing if the property name already starts with the parent schema name
                     # e.g., Entry + entry_specific_role -> EntrySpecificRole (not EntryEntrySpecificRole)
-                    if sanitized_prop_name.lower().startswith(parent_schema_name.lower()):
+                    if sanitized_prop_name.lower().startswith(naming_parent.lower()):
                         prop_context_name = sanitized_prop_name
                     else:
-                        prop_context_name = f"{parent_schema_name}{sanitized_prop_name}"
+                        prop_context_name = f"{naming_parent}{sanitized_prop_name}"
                 else:
                     prop_context_name = NameSanitizer.sanitize_class_name(prop_name)
 
