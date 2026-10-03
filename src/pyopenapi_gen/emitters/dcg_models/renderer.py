@@ -11,10 +11,11 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 from datamodel_code_generator import (
     GenerateConfig,
@@ -24,6 +25,7 @@ from datamodel_code_generator import (
     ModuleSplitMode,
     OpenAPIScope,
     generate,
+    ReuseScope,
 )
 from datamodel_code_generator.enums import DataModelType
 from datamodel_code_generator.format import DatetimeClassType, Formatter, PythonVersion
@@ -34,9 +36,6 @@ from pyopenapi_gen.generator.exceptions import GenerationError
 from pyopenapi_gen.ir import IRSchema, ModelType
 
 from .ir_to_openapi import IRSchemaSerializer, SerializedModels
-
-if TYPE_CHECKING:
-    from datamodel_code_generator.preset_names import PresetName as PresetNameValue
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +132,10 @@ class DcgModelRenderer:
                 for key, name in mapping.items()
             }
         else:
-            extra_template_data = {name: {"field_mappings": m} for name, m in serialized.field_mappings.items() if m}
+            extra_template_data = defaultdict(
+                dict,
+                {name: {"field_mappings": m} for name, m in serialized.field_mappings.items() if m},
+            )
             config.output_model_type = DataModelType.DataclassesDataclass
             config.custom_template_dir = _TEMPLATE_DIR
             config.extra_template_data = extra_template_data
@@ -155,7 +157,7 @@ class DcgModelRenderer:
                 f"datamodel-code-generator preset '{self._preset.value}' targets Python 3.11+; type aliases are "
                 "rendered as PEP 695 'type' statements, which the cattrs runtime cannot see through for union members."
             )
-        config.preset = cast("PresetNameValue", self._preset.value)
+        config.preset = self._preset.value
 
     def generate_config(self, metadata_path: Path, serialized: SerializedModels) -> GenerateConfig:
         config = GenerateConfig(
@@ -173,7 +175,7 @@ class DcgModelRenderer:
             custom_file_header=_FILE_HEADER,
             disable_timestamp=True,
             emit_model_metadata=metadata_path,
-            enum_field_as_literal=LiteralType.One,
+            enum_field_as_literal=LiteralType.Off,
             reuse_model=True,
             collapse_reuse_models=False,
             collapse_root_models=False,

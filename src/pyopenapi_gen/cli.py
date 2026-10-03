@@ -70,7 +70,7 @@ def main(
             "'standard-py310-20260909'; requires '--model-backend dcg'. The preset's Python version "
             "replaces the default 3.10 target; options this tool fixes take precedence over the preset."
         ),
-        autocompletion=lambda: tuple(e.value for e in PresetName),
+        autocompletion=lambda: tuple(map(lambda c: c.value, PresetName)),
     ),
 ) -> None:
     """
