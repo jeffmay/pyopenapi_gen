@@ -173,7 +173,7 @@ class DcgModelRenderer:
             custom_file_header=_FILE_HEADER,
             disable_timestamp=True,
             emit_model_metadata=metadata_path,
-            enum_field_as_literal=LiteralType.Off,
+            enum_field_as_literal=LiteralType.One,
             reuse_model=True,
             collapse_reuse_models=False,
             collapse_root_models=False,
