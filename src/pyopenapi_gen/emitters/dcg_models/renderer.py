@@ -11,20 +11,26 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from datamodel_code_generator import (
+    GenerateConfig,
     GeneratedModules,
     InputFileType,
+    LiteralType,
     ModuleSplitMode,
     OpenAPIScope,
     generate,
+    ReuseScope,
 )
 from datamodel_code_generator.enums import DataModelType
 from datamodel_code_generator.format import DatetimeClassType, Formatter, PythonVersion
+from datamodel_code_generator.preset import PresetName
+from datamodel_code_generator.preset_names import PRESET_NAMES
 
 from pyopenapi_gen.generator.exceptions import GenerationError
 from pyopenapi_gen.ir import IRSchema, ModelType
@@ -75,9 +81,23 @@ class DcgModelRenderer:
             GenerationError: when DCG renames a class or attribute, or omits a requested model
     """
 
-    def __init__(self, model_type: ModelType = ModelType.DATACLASS) -> None:
-        """``model_type`` selects dataclass or pydantic output; names and attribute names are the same for both."""
+    def __init__(self, model_type: ModelType = ModelType.DATACLASS, preset: PresetName | None = None) -> None:
+        """
+        ``model_type`` selects dataclass or pydantic output; names and attribute names are the same for both.
+
+        ``preset`` is forwarded to DCG as ``--preset``. Options this adapter fixes (see the class docstring)
+        always win over the preset's; the preset fills in everything else, including the target Python version.
+
+        Contracts:
+            Preconditions:
+                - ``preset`` is None or one of DCG's built-in preset names
+        """
+        if preset is not None and preset not in PRESET_NAMES:
+            raise GenerationError(
+                f"Unknown datamodel-code-generator preset '{preset}'. Choose one of: {', '.join(PRESET_NAMES)}"
+            )
         self._model_type = model_type
+        self._preset = preset
 
     def render(self, schemas: Sequence[IRSchema]) -> RenderedModels:
         """
@@ -98,52 +118,77 @@ class DcgModelRenderer:
             files=files, locations=locations, anonymous_objects_flattened=serialized.anonymous_objects_flattened
         )
 
-    def _model_type_options(self, serialized: SerializedModels) -> dict[str, Any]:
+    def _set_model_type_options(self, config: GenerateConfig, serialized: SerializedModels) -> None:
         """The DCG options that differ between dataclass and pydantic output."""
         if self._model_type is ModelType.PYDANTIC:
             # The document keeps JSON keys; scoped aliases (``Class.jsonKey``) give DCG the Python attribute
             # names, which it renders as ``python_name: T = Field(..., alias="jsonKey")``.
-            return {
-                "output_model_type": DataModelType.PydanticV2BaseModel,
-                "allow_population_by_field_name": True,
-                "strict_nullable": True,
-                "aliases": {
-                    f"{cls}.{key}": name
-                    for cls, mapping in serialized.field_mappings.items()
-                    for key, name in mapping.items()
-                },
+            config.output_model_type = DataModelType.PydanticV2BaseModel
+            config.allow_population_by_field_name = True
+            config.strict_nullable = True
+            config.aliases = {
+                f"{cls}.{key}": name
+                for cls, mapping in serialized.field_mappings.items()
+                for key, name in mapping.items()
             }
-        extra_template_data = {name: {"field_mappings": m} for name, m in serialized.field_mappings.items() if m}
-        return {
-            "output_model_type": DataModelType.DataclassesDataclass,
-            "custom_template_dir": _TEMPLATE_DIR,
-            "extra_template_data": extra_template_data,
-        }
+        else:
+            extra_template_data = defaultdict(
+                dict,
+                {name: {"field_mappings": m} for name, m in serialized.field_mappings.items() if m},
+            )
+            config.output_model_type = DataModelType.DataclassesDataclass
+            config.custom_template_dir = _TEMPLATE_DIR
+            config.extra_template_data = extra_template_data
+
+    def _set_preset_options(self, config: GenerateConfig) -> None:
+        """
+        The DCG options that depend on whether a preset was requested.
+
+        Without a preset the target is pinned to 3.10 syntax: `X: TypeAlias = A | B`, not a PEP 695
+        `type X = ...` statement, which cattrs cannot see through when (un)structuring union members.
+        With a preset, the target version is left to the preset (DCG rejects an explicit version that
+        disagrees with it), so presets for Python 3.11+ render PEP 695 aliases.
+        """
+        if self._preset is None:
+            config.target_python_version = PythonVersion.PY_310
+            return
+        if "-py310-" not in self._preset.value:
+            logger.warning(
+                f"datamodel-code-generator preset '{self._preset.value}' targets Python 3.11+; type aliases are "
+                "rendered as PEP 695 'type' statements, which the cattrs runtime cannot see through for union members."
+            )
+        config.preset = self._preset.value
+
+    def generate_config(self, metadata_path: Path, serialized: SerializedModels) -> GenerateConfig:
+        config = GenerateConfig(
+            input_file_type=InputFileType.OpenAPI,
+            openapi_scopes=[OpenAPIScope.Schemas],
+            use_type_alias=True,
+            module_split_mode=ModuleSplitMode.Single,
+            use_exact_imports=True,
+            custom_class_name_generator=_keep_class_name,
+            use_subclass_enum=True,
+            use_specialized_enum=False,
+            set_default_enum_member=True,
+            output_datetime_class=DatetimeClassType.Datetime,
+            formatters=[Formatter.BUILTIN],  # PostprocessManager formats the final files
+            custom_file_header=_FILE_HEADER,
+            disable_timestamp=True,
+            emit_model_metadata=metadata_path,
+            enum_field_as_literal=LiteralType.Off,
+            reuse_model=True,
+            collapse_reuse_models=False,
+            collapse_root_models=False,
+        )
+        self._set_model_type_options(config, serialized)
+        self._set_preset_options(config)
+        return config
 
     def _run_dcg(self, serialized: SerializedModels) -> tuple[GeneratedModules, list[dict[str, Any]]]:
         with tempfile.TemporaryDirectory() as scratch:
             metadata_path = Path(scratch) / "metadata.json"
-            result = generate(
-                serialized.document,
-                input_file_type=InputFileType.OpenAPI,
-                openapi_scopes=[OpenAPIScope.Schemas],
-                # Emit 3.10-compatible syntax: `X: TypeAlias = A | B`, not a PEP 695 `type X = ...`
-                # statement, which cattrs cannot see through when (un)structuring union members.
-                target_python_version=PythonVersion.PY_310,
-                use_type_alias=True,
-                module_split_mode=ModuleSplitMode.Single,
-                use_exact_imports=True,
-                custom_class_name_generator=_keep_class_name,
-                use_subclass_enum=True,
-                use_specialized_enum=False,
-                set_default_enum_member=True,
-                output_datetime_class=DatetimeClassType.Datetime,
-                formatters=[Formatter.BUILTIN],  # PostprocessManager formats the final files
-                custom_file_header=_FILE_HEADER,
-                disable_timestamp=True,
-                emit_model_metadata=metadata_path,
-                **self._model_type_options(serialized),
-            )
+            config = self.generate_config(metadata_path, serialized)
+            result = generate(serialized.document, config=config)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))["models"]
         if not isinstance(result, dict):
             raise GenerationError("datamodel-code-generator returned a single module; expected one module per model.")

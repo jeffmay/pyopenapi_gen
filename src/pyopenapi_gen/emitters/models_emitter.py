@@ -2,6 +2,8 @@ import logging
 from pathlib import Path
 from typing import List, Set
 
+from datamodel_code_generator.preset import PresetName
+
 from pyopenapi_gen import IRSchema, IRSpec
 from pyopenapi_gen.context.render_context import RenderContext
 from pyopenapi_gen.core.loader.schemas.extractor import extract_inline_array_items, extract_inline_enums
@@ -24,6 +26,10 @@ def _str_alias_source(class_name: str) -> str:
     )
 
 
+DEFAULT_PYTHON_MODEL_PRESET = PresetName.StandardPy31220260909
+"""Default to the latest Standard Python 3.12 preset."""
+
+
 class ModelsEmitter:
     """
     Orchestrates the generation of model files (dataclasses, enums, type aliases).
@@ -39,12 +45,14 @@ class ModelsEmitter:
         discriminator_skip_list: set[str] | None = None,
         model_backend: ModelBackend = ModelBackend.LEGACY,
         model_type: ModelType = ModelType.DATACLASS,
+        model_python_preset: PresetName | None = None,
     ):
         assert (
             model_type is ModelType.DATACLASS or model_backend is ModelBackend.DCG
         ), "pydantic models require the dcg model backend"  # nosec B101 - design-by-contract precondition
         self.model_backend: ModelBackend = model_backend
         self.model_type: ModelType = model_type
+        self.model_python_preset: PresetName = model_python_preset or DEFAULT_PYTHON_MODEL_PRESET
         self.context: RenderContext = context
         # Store a reference to the schemas that were passed in.
         # These schemas will have their .generation_name and .final_module_stem updated.
@@ -525,7 +533,7 @@ class ModelsEmitter:
         skipped_ids = {id(s) for s in skipped}
         to_render = [s for s in named_schemas if id(s) not in skipped_ids]
 
-        rendered = DcgModelRenderer(self.model_type).render(to_render)
+        rendered = DcgModelRenderer(self.model_type, self.model_python_preset).render(to_render)
         if rendered.anonymous_objects_flattened:
             logger.warning(
                 f"{rendered.anonymous_objects_flattened} anonymous inline object(s) were rendered as "
