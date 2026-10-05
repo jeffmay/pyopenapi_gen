@@ -465,6 +465,9 @@ def _parse_properties(
                     max_depth_override,
                     allow_self_reference,
                 )
+                if schema_name_for_parsing is not None and parsed_prop_schema_ir.enum:
+                    # The enum was named here (`<Schema><Property>`), not by the spec author.
+                    parsed_prop_schema_ir._is_name_derived = True
                 # If the parsed schema retained the contextual name and it was registered,
                 # it implies it might be a complex anonymous type that got registered.
                 # In such cases, the property should *refer* to it.

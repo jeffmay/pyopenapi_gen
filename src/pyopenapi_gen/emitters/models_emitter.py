@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import List, Set
 
@@ -9,8 +10,9 @@ from pyopenapi_gen.context.render_context import RenderContext
 from pyopenapi_gen.core.loader.schemas.extractor import extract_inline_array_items, extract_inline_enums
 from pyopenapi_gen.core.utils import NameSanitizer
 from pyopenapi_gen.core.writers.code_writer import CodeWriter
+from pyopenapi_gen.emitters.dcg_models.literal_enums import find_literal_enums
 from pyopenapi_gen.emitters.dcg_models.renderer import DcgModelRenderer
-from pyopenapi_gen.ir import ModelBackend, ModelType
+from pyopenapi_gen.ir import IROperation, ModelBackend, ModelType
 from pyopenapi_gen.visit.model.model_visitor import ModelVisitor
 
 # Removed OPENAPI_TO_PYTHON_TYPES, FORMAT_TYPE_MAPPING, and MODEL_TEMPLATE constants
@@ -417,7 +419,7 @@ class ModelsEmitter:
         # --- End of Name de-collision ---
 
         if self.model_backend is ModelBackend.DCG:
-            return self._emit_with_dcg(models_dir, init_path, schemas_to_name_decollision)
+            return self._emit_with_dcg(models_dir, init_path, schemas_to_name_decollision, spec.operations)
 
         generated_files = []
         # Iterate using the keys from `all_schemas_for_generation` as it's the definitive list.
@@ -516,7 +518,13 @@ class ModelsEmitter:
         # py.typed file to indicate type information is available
         (models_dir / "py.typed").write_text("")  # Ensure empty content, encoding defaults to utf-8
 
-    def _emit_with_dcg(self, models_dir: Path, init_path: Path, named_schemas: List[IRSchema]) -> dict[str, List[str]]:
+    def _emit_with_dcg(
+        self,
+        models_dir: Path,
+        init_path: Path,
+        named_schemas: List[IRSchema],
+        operations: Sequence[IROperation] = (),
+    ) -> dict[str, List[str]]:
         """
         Render ``named_schemas`` with datamodel-code-generator instead of ``ModelVisitor``.
 
@@ -526,14 +534,22 @@ class ModelsEmitter:
 
         Contracts:
             Postconditions:
-                - every schema in ``named_schemas`` has a ``final_module_stem`` naming a file in ``models_dir``
+                - every schema in ``named_schemas`` has a ``final_module_stem`` naming a file in ``models_dir``,
+                  except inline enums rendered as literals, whose ``final_module_stem`` is None
                 - ``models/__init__.py`` and ``py.typed`` exist
         """
         skipped = [s for s in named_schemas if s.enum and s.name in self.discriminator_skip_list]
         skipped_ids = {id(s) for s in skipped}
-        to_render = [s for s in named_schemas if id(s) not in skipped_ids]
+        renderable = [s for s in named_schemas if id(s) not in skipped_ids]
 
-        rendered = DcgModelRenderer(self.model_type, self.model_python_preset).render(to_render)
+        # Enums the spec author wrote inline become `Literal[...]` fields, so they get no class or module.
+        literal_enums = find_literal_enums(renderable, operations)
+        literal_ids = {id(s) for s in literal_enums}
+        to_render = [s for s in renderable if id(s) not in literal_ids]
+        for enum in literal_enums:
+            enum.final_module_stem = None
+
+        rendered = DcgModelRenderer(self.model_type, self.model_python_preset).render(to_render, literal_enums)
         if rendered.anonymous_objects_flattened:
             logger.warning(
                 f"{rendered.anonymous_objects_flattened} anonymous inline object(s) were rendered as "

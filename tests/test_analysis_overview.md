@@ -81,6 +81,7 @@ tests/
 │   ├── test_docs_emitter.py (Analyzed)
 │   ├── dcg_models/
 │   │   ├── test_dcg_ir_to_openapi.py (Analyzed)
+│   │   ├── test_dcg_literal_enums.py (Analyzed)
 │   │   ├── test_dcg_model_backend.py (Analyzed)
 │   │   └── test_dcg_renderer.py (Analyzed)
 │   ├── test_duplicate_operations.py (Analyzed)
