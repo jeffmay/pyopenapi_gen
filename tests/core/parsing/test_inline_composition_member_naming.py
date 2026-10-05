@@ -138,3 +138,28 @@ def test_load_ir__directly_declared_enum__naming_unchanged(owner: str) -> None:
 
     # Assert
     assert ir.schemas[f"{owner}Status"].enum == ["a", "b"]
+
+
+@pytest.mark.parametrize("property_key", ["type", "id", "data", "class"])
+def test_load_ir__enum_property_with_reserved_name__registered_schema_keeps_its_class_name(property_key: str) -> None:
+    """
+    Scenario:
+        An inline enum is declared on a property whose key is a reserved name (``type``, ``id``, ...), which
+        the sanitizer would turn into ``Type_`` when it stands alone.
+
+    Expected Outcome:
+        The enum is registered as ``<Schema><Property>`` and its own ``name`` stays that class name; the
+        property refers to it instead of renaming the shared schema after the property key.
+    """
+    # Arrange
+    class_name = f"Covered{property_key.capitalize()}"
+    spec = _spec({"Covered": {"type": "object", "properties": {property_key: {"type": "string", "enum": ["a"]}}}})
+
+    # Act
+    ir = load_ir_from_spec(spec)
+
+    # Assert
+    enum_schema = ir.schemas[class_name]
+    assert enum_schema.name == class_name
+    assert enum_schema.enum == ["a"]
+    assert ir.schemas["Covered"].properties[property_key].name is None

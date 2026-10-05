@@ -436,6 +436,11 @@ def _parse_properties(
                 else:
                     prop_context_name = NameSanitizer.sanitize_class_name(prop_name)
 
+                # `_parse_schema` registers a named schema under its sanitized name, so the name must already
+                # be in that form for the registration below to be recognised. Without this, a reserved
+                # property key (`type` -> `Type_`) yields `CoveredType_`, which is registered as `CoveredType`.
+                prop_context_name = NameSanitizer.sanitize_class_name(prop_context_name)
+
                 # For simple primitives and simple arrays, avoid creating separate schemas
                 if (is_simple_primitive or is_simple_array) and prop_context_name in context.parsed_schemas:
                     # There's a naming conflict - use a unique name to avoid confusion
