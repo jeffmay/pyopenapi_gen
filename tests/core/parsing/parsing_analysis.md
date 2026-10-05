@@ -101,7 +101,7 @@
 
 - **Overall**: Regression tests for inline enums/objects declared in unnamed `allOf` members. They were previously named from the property key alone (`Status`), so sibling schemas shared the first one parsed and silently lost their own enum values.
 - **Test Naming and Structure**: pytest functions named `test_<unit>__<condition>__<outcome>` with `Scenario`/`Expected Outcome` docstrings; specs are built in-memory and loaded through `load_ir_from_spec`.
-- **Coverage**: distinct enum values per sibling schema, naming after the enclosing schema, distinct promoted inline objects, and unchanged naming for directly declared enums.
+- **Coverage**: distinct enum values per sibling schema, naming after the enclosing schema, distinct promoted inline objects, and unchanged naming for directly declared enums. Also covers enum properties with reserved keys (`type`, `id`, ...), whose synthetic name previously missed the sanitized registration key and got the shared schema renamed to the property key (`Type_`, `Type2` downstream).
 
 ### `tests/core/parsing/test_inline_enum_extractor.py`
 
