@@ -25,7 +25,6 @@ from datamodel_code_generator import (
     ModuleSplitMode,
     OpenAPIScope,
     generate,
-    ReuseScope,
 )
 from datamodel_code_generator.enums import DataModelType
 from datamodel_code_generator.format import DatetimeClassType, Formatter, PythonVersion
@@ -99,16 +98,24 @@ class DcgModelRenderer:
         self._model_type = model_type
         self._preset = PresetName(preset) if preset is not None else None
 
-    def render(self, schemas: Sequence[IRSchema]) -> RenderedModels:
+    def render(self, schemas: Sequence[IRSchema], literal_enums: Sequence[IRSchema] = ()) -> RenderedModels:
         """
         Generate models for ``schemas``.
 
         Schemas that are referenced but not passed in are inlined at their use sites as plain types.
+        ``literal_enums`` are enums with no class of their own: each property that uses one is rendered
+        as ``Literal[...]`` (see ``find_literal_enums`` for which enums qualify). They get no location.
+
+        Contracts:
+            Preconditions:
+                - no schema in ``literal_enums`` is also in ``schemas``
         """
         if not schemas:
             return RenderedModels(files={}, locations={})
 
-        serialized = IRSchemaSerializer(schemas, keep_json_names=self._model_type is ModelType.PYDANTIC).serialize()
+        serialized = IRSchemaSerializer(
+            schemas, keep_json_names=self._model_type is ModelType.PYDANTIC, literal_enums=literal_enums
+        ).serialize()
         modules, metadata = self._run_dcg(serialized)
         locations = self._locate_models(serialized, metadata)
         self._verify_field_names(serialized, metadata)
@@ -179,6 +186,8 @@ class DcgModelRenderer:
             reuse_model=True,
             collapse_reuse_models=False,
             collapse_root_models=False,
+            # Only inline enum fields are affected: enums referenced with `$ref` stay classes.
+            enum_field_as_literal_map={key: "literal" for key in sorted(serialized.literal_enum_fields)} or None,
         )
         self._set_model_type_options(config, serialized)
         self._set_preset_options(config)

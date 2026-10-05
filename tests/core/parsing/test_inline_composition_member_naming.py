@@ -163,3 +163,63 @@ def test_load_ir__enum_property_with_reserved_name__registered_schema_keeps_its_
     assert enum_schema.name == class_name
     assert enum_schema.enum == ["a"]
     assert ir.schemas["Covered"].properties[property_key].name is None
+
+
+def test_load_ir__inline_enums__flagged_as_generator_named_and_component_enums_are_not() -> None:
+    """
+    Scenario:
+        A spec declares a component enum, an inline enum on a property, and an inline enum in an
+        ``allOf`` member.
+
+    Expected Outcome:
+        Only the enums the generator had to name are flagged as name-derived; the component enum is not.
+        The datamodel-code-generator backend relies on this to render only the former as literals.
+    """
+    # Arrange
+    spec = _spec(
+        {
+            "Species": {"type": "string", "enum": ["cat", "dog"]},
+            "Pet": {
+                "type": "object",
+                "properties": {
+                    "species": {"$ref": "#/components/schemas/Species"},
+                    "state": {"type": "string", "enum": ["new"]},
+                },
+            },
+            "Cat": _variant(["stray"]),
+        }
+    )
+
+    # Act
+    ir = load_ir_from_spec(spec)
+
+    # Assert
+    assert ir.schemas["Species"]._is_name_derived is False
+    assert ir.schemas["PetState"]._is_name_derived is True
+    assert ir.schemas["CatStatus"]._is_name_derived is True
+
+
+def test_extract_inline_enums__property_enum_without_a_schema__new_enum_flagged_as_generator_named() -> None:
+    """
+    Scenario:
+        A schema has an inline enum property that parsing did not already register as a schema.
+
+    Expected Outcome:
+        The enum schema ``extract_inline_enums`` creates for it is flagged as generator-named.
+    """
+    from pyopenapi_gen.core.loader.schemas.extractor import extract_inline_enums
+
+    # Arrange
+    pet = IRSchema(
+        name="Pet",
+        type="object",
+        properties={"state": IRSchema(type="string", enum=["new"])},
+    )
+
+    # Act
+    schemas = extract_inline_enums({"Pet": pet})
+
+    # Assert
+    created = [s for key, s in schemas.items() if key != "Pet"]
+    assert len(created) == 1 and created[0].enum == ["new"]
+    assert created[0]._is_name_derived is True

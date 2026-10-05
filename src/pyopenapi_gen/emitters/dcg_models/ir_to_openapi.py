@@ -23,6 +23,8 @@ from pyopenapi_gen.core.utils import NameSanitizer
 from pyopenapi_gen.ir import IRSchema
 from pyopenapi_gen.visit.model.enum_generator import EnumGenerator
 
+from .literal_enums import EnumReferenceResolver
+
 logger = logging.getLogger(__name__)
 
 COMPONENTS_PREFIX = "#/components/schemas/"
@@ -50,6 +52,13 @@ class SerializedModels:
     definitions: frozenset[str] = field(default_factory=frozenset)
     """Every class name that was emitted as a definition."""
 
+    literal_enum_fields: frozenset[str] = frozenset()
+    """
+    Python attribute names of the properties whose enum was inlined, to be rendered as ``Literal[...]``.
+
+    DCG matches its literal map against the final attribute name (after aliases), not the key in ``document``.
+    """
+
 
 class IRSchemaSerializer:
     """
@@ -65,10 +74,18 @@ class IRSchemaSerializer:
               referenced with ``$ref`` rather than copied inline
     """
 
-    def __init__(self, named_schemas: Sequence[IRSchema], keep_json_names: bool = False) -> None:
+    def __init__(
+        self,
+        named_schemas: Sequence[IRSchema],
+        keep_json_names: bool = False,
+        literal_enums: Sequence[IRSchema] = (),
+    ) -> None:
         """
         Args:
             named_schemas: The schemas to serialise as definitions.
+            literal_enums: Enums that get no definition: every property that uses one is serialised with
+                the enum values in place, and reported in ``SerializedModels.literal_enum_fields`` so the
+                caller can ask DCG for a ``Literal`` there.
             keep_json_names: When False (dataclass models) object properties are renamed to their Python
                 attribute names in the document and the mapping back is reported in ``field_mappings``.
                 When True (pydantic models) the document keeps the JSON keys, and the caller passes
@@ -86,6 +103,8 @@ class IRSchemaSerializer:
         self._keep_json_names = keep_json_names
         self._names_by_id: dict[int, str] = {id(s): s.generation_name for s in named_schemas if s.generation_name}
         self._names_by_ir_name = self._unambiguous_ir_names(named_schemas)
+        self._literal_enums = EnumReferenceResolver(literal_enums)
+        self._literal_fields: set[str] = set()
         self._stack: set[int] = set()
         self._field_mappings: dict[str, dict[str, str]] = {}
         self._field_names: dict[str, list[str]] = {}
@@ -124,6 +143,7 @@ class IRSchemaSerializer:
             field_names=self._field_names,
             anonymous_objects_flattened=self._anonymous_objects,
             definitions=frozenset(definitions),
+            literal_enum_fields=frozenset(self._literal_fields),
         )
 
     # -- references ---------------------------------------------------------------------------
@@ -242,7 +262,13 @@ class IRSchemaSerializer:
         properties: dict[str, Any] = {}
         for api_name, python_name in ordered:
             prop = schema.properties[api_name]
-            node = self._use_site(prop)
+            literal_enum = self._literal_enums.resolve(prop)
+            if literal_enum is not None:
+                literal_body = _literal_enum_body(literal_enum)
+                node = _make_nullable(literal_body) if prop.is_nullable else literal_body
+                self._literal_fields.add(python_name)
+            else:
+                node = self._use_site(prop)
             if api_name not in schema.required:
                 default = self._optional_field_default(prop, is_reference=self._definition_name(prop) is not None)
                 if default is not _NO_DEFAULT:
@@ -304,6 +330,11 @@ class IRSchemaSerializer:
             used[python_name] = api_name
             pairs.append((api_name, python_name))
         return pairs
+
+
+def _literal_enum_body(enum: IRSchema) -> dict[str, Any]:
+    """An enum's values in place of a ``$ref``; DCG renders it as a ``Literal`` when the field is in the literal map."""
+    return {"type": enum.type, "enum": list(enum.enum or [])}
 
 
 def _make_nullable(node: dict[str, Any]) -> dict[str, Any]:
