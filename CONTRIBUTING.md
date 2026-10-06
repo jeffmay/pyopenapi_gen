@@ -353,10 +353,10 @@ Use descriptive branch names:
 
 ### Commit Messages
 
-Write clear, descriptive commit messages:
+Use [Conventional Commits](https://www.conventionalcommits.org/). The prefix decides whether merging your change cuts a release (see [Release Process](#-release-process)):
 
 ```
-Add OAuth2 authentication support
+feat(auth): add OAuth2 authentication support
 
 - Implement OAuth2Auth plugin with refresh token handling
 - Add comprehensive tests for token refresh scenarios
@@ -367,6 +367,8 @@ Fixes #123
 ```
 
 ### Pull Request Process
+
+Open pull requests against `develop`, the default and only long-lived branch.
 
 1. **Before Creating PR:**
    ```bash
@@ -415,9 +417,9 @@ Fixes #123
 - [ ] Tests pass with ≥85% coverage (`make test`)
 - [ ] Code follows project conventions
 - [ ] Documentation updated for new features
-- [ ] Clear commit messages and PR description
+- [ ] Conventional commit messages and a clear PR description
 - [ ] No breaking changes without migration guide
-- [ ] Branch is up to date with main
+- [ ] Branch is up to date with `develop`
 
 ## 🏗️ Project Architecture
 
@@ -489,85 +491,22 @@ When making architectural changes:
 
 ## 🔖 Release Process
 
-### Version Management
+Releases are fully automated and cut from `develop`. There is no package index, staging branch, or back-merge; a release is a `vX.Y.Z` git tag plus a GitHub release, and people run it with `uvx --from git+https://github.com/jeffmay/pyopenapi_gen@vX.Y.Z pyopenapi-gen`.
 
-We follow [Semantic Versioning](https://semver.org/):
+When a pull request is merged into `develop`, the release workflow looks at the commits since the last tag and follows [Semantic Versioning](https://semver.org/):
 
-- **MAJOR** (e.g., 1.0.0 → 2.0.0): Breaking changes
-- **MINOR** (e.g., 1.0.0 → 1.1.0): New features, backward compatible
-- **PATCH** (e.g., 1.0.0 → 1.0.1): Bug fixes, backward compatible
+- **MAJOR** (e.g., 5.1.12 → 6.0.0): a `BREAKING CHANGE:` footer
+- **MINOR** (e.g., 5.1.12 → 5.2.0): a `feat:` commit
+- **PATCH** (e.g., 5.1.12 → 5.1.13): a `fix:` or `perf:` commit
 
-### Changelog Protocol
+Other prefixes (`docs:`, `test:`, `chore:`, `refactor:`, ...) don't trigger a release on their own.
 
-We maintain a changelog following [Keep a Changelog](https://keepachangelog.com/) format:
+The workflow then bumps the version in `pyproject.toml` and `src/pyopenapi_gen/__init__.py`, writes the `CHANGELOG.md` entry from the commit messages, commits and tags the result on `develop`, and creates the GitHub release. As a contributor you don't need to do anything beyond writing good conventional commits:
 
-**Structure:**
-```markdown
-# Changelog
+- Don't edit version numbers or `CHANGELOG.md` by hand.
+- Don't use the `chore(release):` prefix; it's reserved for the release commit.
 
-All notable changes to this project will be documented in this file.
-
-## [Unreleased]
-
-### Added
-- New features that have been added
-
-### Changed
-- Changes in existing functionality
-
-### Deprecated
-- Soon-to-be removed features
-
-### Removed
-- Features that have been removed
-
-### Fixed
-- Bug fixes
-
-### Security
-- Security vulnerability fixes
-
-## [1.0.0] - 2024-01-15
-
-### Added
-- Initial release with core functionality
-```
-
-**Updating the Changelog:**
-1. Keep an `[Unreleased]` section at the top
-2. Add entries as you develop features
-3. Categorize changes appropriately
-4. Use clear, descriptive language
-5. Include issue/PR references where relevant
-
-**Example Entries:**
-```markdown
-### Added
-- OAuth2 authentication support with refresh token handling (#123)
-- Automatic pagination detection for cursor-based APIs (#145)
-
-### Fixed
-- Circular reference detection in deeply nested schemas (#134)
-- Import resolution for generated models with forward references (#142)
-
-### Changed
-- Improved error messages for schema parsing failures (#139)
-- Updated type resolution to use unified service architecture (#151)
-```
-
-### Release Checklist
-
-Before releasing a new version:
-
-- [ ] Update version in `pyproject.toml`
-- [ ] Update version in `src/pyopenapi_gen/__init__.py`
-- [ ] Move `[Unreleased]` changes to new version section in CHANGELOG.md
-- [ ] Ensure all tests pass (`make test`)
-- [ ] Ensure all quality checks pass (`make quality`)
-- [ ] Update documentation if needed
-- [ ] Create release PR with version bump
-- [ ] Tag release after merge
-- [ ] Publish to PyPI (maintainers only)
+See [docs/release-automation.md](docs/release-automation.md) for configuration, the required secret, and troubleshooting.
 
 ## 🤝 Community Guidelines
 

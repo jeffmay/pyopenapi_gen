@@ -2,7 +2,7 @@ name: Pull Request Checks
 
 on:
   pull_request:
-    branches: [develop, staging, main]
+    branches: [develop]
   workflow_dispatch:
 
 permissions:

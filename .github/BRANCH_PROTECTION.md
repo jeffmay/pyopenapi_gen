@@ -1,18 +1,10 @@
 # Branch Protection Configuration
 
-This document outlines the GitHub branch protection settings for the `develop`, `staging`, and `main` branches.
-
-## 🛡️ Branch Protection Status
-
-All three critical branches are now **FULLY PROTECTED** with the following settings:
-
-- **main**: ✅ Protected with full CI/CD enforcement
-- **staging**: ✅ Protected with full CI/CD enforcement  
-- **develop**: ✅ Protected with full CI/CD enforcement
+This document outlines the GitHub branch protection settings for `develop`, the default and only long-lived branch. All pull requests target `develop`, all CI runs against it, and releases are cut from it (see [Release Process](../docs/release-automation.md)).
 
 ## Required Settings
 
-### Branch Protection Rules for `develop`, `staging`, and `main`
+### Branch Protection Rules for `develop`
 
 1. **Require pull request reviews before merging**
    - Required approving reviews: 1
@@ -22,11 +14,10 @@ All three critical branches are now **FULLY PROTECTED** with the following setti
 2. **Require status checks to pass before merging**
    - Require branches to be up to date before merging: ✅
    - Required status checks:
-     - `format-check` (Black formatting)
-     - `lint` (Ruff linting)
-     - `typecheck` (MyPy type checking)
-     - `security` (Bandit security scanning)
-     - `test` (Full test suite with 85% coverage)
+     - `quality-checks` (Black, Ruff, mypy, and the test suite with 85% coverage)
+     - `security-scan` (pip-audit and Bandit)
+     - `integration-tests` (integration tests and CLI generation smoke test)
+     - `test` (placeholder check from `ci.yml`)
 
 3. **Require conversation resolution before merging**: ✅
 
@@ -34,7 +25,7 @@ All three critical branches are now **FULLY PROTECTED** with the following setti
 
 5. **Require linear history**: ❌ (optional)
 
-6. **Do not allow bypassing the above settings**: ✅
+6. **Allow the release identity to bypass the above settings**: ✅ (everyone else: ❌)
 
 7. **Restrict pushes that create files**: ❌
 
@@ -44,11 +35,13 @@ All three critical branches are now **FULLY PROTECTED** with the following setti
 
 ## 🔒 Protection Features
 
+### Release Pushes
+The release workflow (`semantic-release.yml`) pushes a `chore(release): X.Y.Z` commit and a `vX.Y.Z` tag directly to `develop`, without a pull request. The identity behind the `SEMANTIC_RELEASE_TOKEN` secret must therefore be able to bypass the pull request requirement, for example as a bypass actor on a repository ruleset, or as an admin with "Do not allow bypassing the above settings" left unchecked. Nobody else should be able to push to `develop` directly.
+
 ### Deletion Protection
-All branches are protected from accidental deletion:
+`develop` is protected from accidental deletion:
 - Force pushes are disabled
 - Branch deletion is explicitly forbidden
-- Admin privileges still enforce protection rules
 
 ### Quality Gates
 Every PR must pass all quality checks:
@@ -70,17 +63,16 @@ Every PR must pass all quality checks:
 
 ### Via GitHub CLI
 
-The protection was applied using GitHub CLI. Here's how to configure each branch:
-
 ```bash
-# Create protection JSON
+# Create protection JSON. enforce_admins is false so an admin-owned
+# SEMANTIC_RELEASE_TOKEN can push the release commit and tag.
 cat > branch_protection.json << EOF
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["format-check", "lint", "typecheck", "security", "test"]
+    "contexts": ["quality-checks", "security-scan", "integration-tests", "test"]
   },
-  "enforce_admins": true,
+  "enforce_admins": false,
   "required_pull_request_reviews": {
     "required_approving_review_count": 1,
     "dismiss_stale_reviews": true,
@@ -92,10 +84,7 @@ cat > branch_protection.json << EOF
 }
 EOF
 
-# Apply to each branch
-gh api --method PUT repos/OWNER/REPO/branches/main/protection --input branch_protection.json
 gh api --method PUT repos/OWNER/REPO/branches/develop/protection --input branch_protection.json
-gh api --method PUT repos/OWNER/REPO/branches/staging/protection --input branch_protection.json
 ```
 
 ## Quality Gates Enforced
@@ -120,12 +109,13 @@ The pipeline enforces the following quality gates:
 ### Functionality
 - ✅ **CLI functionality**: Command-line interface works correctly
 - ✅ **Client generation**: Generated clients have proper structure
-- ✅ **Package building**: Project can be built successfully
 
 ## Workflow Files
 
-- `.github/workflows/pr-checks.yml`: Runs on PRs to develop branch
-- `.github/workflows/main-checks.yml`: Runs on pushes to main branch
+- `.github/workflows/pr-checks.yml`: Quality, security, and integration checks on PRs to `develop`
+- `.github/workflows/ci.yml`: Placeholder `test` check on PRs and pushes to `develop`
+- `.github/workflows/semantic-release.yml`: Cuts a release on pushes to `develop`
+- `.github/workflows/dependabot-poetry-lock-fix.yml`: Resolves `poetry.lock` conflicts on Dependabot PRs
 
 ## Local Development
 

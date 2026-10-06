@@ -60,13 +60,13 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/pyopenapi-gen"
-Documentation = "https://github.com/your-org/pyopenapi-gen/blob/main/README.md"
-Repository = "https://github.com/your-org/pyopenapi-gen"
-Issues = "https://github.com/your-org/pyopenapi-gen/issues"
-Changelog = "https://github.com/your-org/pyopenapi-gen/blob/main/CHANGELOG.md"
-"Bug Reports" = "https://github.com/your-org/pyopenapi-gen/issues"
-"Source Code" = "https://github.com/your-org/pyopenapi-gen"
+Homepage = "https://github.com/jeffmay/pyopenapi_gen"
+Documentation = "https://github.com/jeffmay/pyopenapi_gen/blob/develop/README.md"
+Repository = "https://github.com/jeffmay/pyopenapi_gen"
+Issues = "https://github.com/jeffmay/pyopenapi_gen/issues"
+Changelog = "https://github.com/jeffmay/pyopenapi_gen/blob/develop/CHANGELOG.md"
+"Bug Reports" = "https://github.com/jeffmay/pyopenapi_gen/issues"
+"Source Code" = "https://github.com/jeffmay/pyopenapi_gen"
 
 [project.optional-dependencies]
 dev = [
@@ -137,8 +137,6 @@ commitizen = "^4.18.0"
 python-semantic-release = "^10.6.1"
 pytest-xdist = "^3.8.0"
 pytest-cov = "^7.1.0"
-build = "^1.6.1"
-twine = "^7.0.0"
 pytest = "^9.1.1"
 
 [project.scripts]
@@ -171,14 +169,11 @@ commit_message = "chore(release): {version}"
 commit_parser = "conventional"
 major_on_zero = false
 
-[tool.semantic_release.branches.main]
-match = "main"
+[tool.semantic_release.branches.develop]
+match = "^develop$"
 
 [tool.semantic_release.remote]
 type = "github"
-
-[tool.semantic_release.publish]
-upload_to_vcs_release = true
 
 # `mode = "update"` inserts new entries after `insertion_flag`; CHANGELOG.md must
 # therefore contain that exact marker, or releases silently write nothing.

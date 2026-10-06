@@ -34,15 +34,29 @@ Generate async-first Python clients from OpenAPI specs with complete type safety
 
 ## Installation
 
-```bash
-pip install pyopenapi-gen
-```
-
-Or with Poetry:
+PyOpenAPI Generator isn't published to PyPI. Run it straight from GitHub with [`uvx`](https://docs.astral.sh/uv/guides/tools/), pinned to a release tag from the [releases page](https://github.com/jeffmay/pyopenapi_gen/releases):
 
 ```bash
-poetry add pyopenapi-gen
+uvx --from git+https://github.com/jeffmay/pyopenapi_gen@v5.1.12 pyopenapi-gen --help
 ```
+
+Use a branch name instead of a tag (for example `@develop`) to try unreleased changes, adding `--refresh` so `uv` picks up the latest commit.
+
+To keep `pyopenapi-gen` on your `PATH` so the commands below work as written:
+
+```bash
+uv tool install git+https://github.com/jeffmay/pyopenapi_gen@v5.1.12
+```
+
+To use the [programmatic API](#using-as-a-library-programmatic-api), add it as a git dependency:
+
+```bash
+uv add git+https://github.com/jeffmay/pyopenapi_gen --tag v5.1.12
+# or
+poetry add git+https://github.com/jeffmay/pyopenapi_gen.git#v5.1.12
+```
+
+See [Release Process](docs/release-automation.md) for how versions are cut.
 
 ## ⚡ Quick Start
 
@@ -1109,6 +1123,7 @@ graph TD
 - **[Architecture Guide](docs/architecture.md)** - Deep dive into the system design
 - **[Type Resolution](docs/unified_type_resolution.md)** - How types are resolved and generated
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
+- **[Release Process](docs/release-automation.md)** - How versions are tagged and how to run a specific one
 - **[API Reference](docs/)** - Complete API documentation
 
 ## 🤝 Contributing
