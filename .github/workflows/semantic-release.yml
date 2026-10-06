@@ -2,7 +2,7 @@ name: Semantic Release
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   workflow_dispatch:
     inputs:
       reason:
@@ -12,14 +12,10 @@ on:
 
 permissions:
   contents: write
-  packages: write
-  pull-requests: write
-  issues: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment: production
     concurrency:
       group: semantic-release
       cancel-in-progress: false
@@ -98,6 +94,9 @@ jobs:
           echo "No release-worthy changes found since $LAST_TAG"
         fi
 
+    # Pushes the "chore(release): X.Y.Z" commit and vX.Y.Z tag straight to develop and
+    # creates the GitHub release, so SEMANTIC_RELEASE_TOKEN must be allowed to push to
+    # develop past its branch protection.
     - name: Run semantic-release version
       if: steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch'
       env:
@@ -106,227 +105,6 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         poetry run semantic-release version --skip-build
-
-    - name: Sync version to __init__.py
-      if: steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch'
-      env:
-        GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-      run: |
-        echo "🔄 Syncing version from pyproject.toml to __init__.py..."
-
-        # Fetch latest to ensure we have the semantic-release commit
-        git fetch origin main
-        git reset --hard origin/main
-
-        # Run sync script
-        poetry run python scripts/sync_version_to_init.py
-
-        # Check if __init__.py was modified
-        if git diff --quiet src/pyopenapi_gen/__init__.py; then
-          echo "✅ __init__.py already in sync, no changes needed"
-        else
-          echo "📝 __init__.py was updated, creating follow-up commit..."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/pyopenapi_gen/__init__.py
-          git commit -m "chore(release): sync __init__.py version"
-          git push origin main
-          echo "✅ Version sync complete and committed"
-        fi
-
-    - name: Build packages after version bump
-      if: steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch'
-      run: |
-        echo "🧹 Cleaning old packages..."
-        rm -rf dist/
-        echo "📦 Building packages with updated version..."
-        poetry run python -m build
-        echo "📋 Package contents:"
-        ls -la dist/
-
-    - name: Check if packages exist after semantic-release
-      if: steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch'
-      run: |
-        if [ -d "dist" ] && [ "$(ls -A dist/)" ]; then
-          echo "✅ Packages exist in dist/"
-          ls -la dist/
-          
-          # Extract version from package filename
-          PACKAGE_VERSION=$(ls dist/*.whl | sed 's/.*-\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/' | head -1)
-          echo "📦 Built package version: $PACKAGE_VERSION"
-          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_ENV
-          
-          # Check if version already exists on PyPI
-          PYPI_LATEST=$(curl -s "https://pypi.org/pypi/pyopenapi-gen/json" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['info']['version'])" 2>/dev/null || echo "unknown")
-          echo "📚 PyPI latest version: $PYPI_LATEST"
-          
-          if [ "$PACKAGE_VERSION" = "$PYPI_LATEST" ]; then
-            echo "⚠️ Version $PACKAGE_VERSION already exists on PyPI"
-            echo "This indicates either:"
-            echo "  - No release-worthy changes since last version"
-            echo "  - Semantic-release didn't detect conventional commits"
-            echo "  - Last commit was already a release commit"
-            echo "packages_exist=false" >> $GITHUB_ENV
-            echo "version_conflict=true" >> $GITHUB_ENV
-          else
-            echo "✅ New version $PACKAGE_VERSION ready for publishing (current: $PYPI_LATEST → new: $PACKAGE_VERSION)"
-            echo "packages_exist=true" >> $GITHUB_ENV
-            echo "version_conflict=false" >> $GITHUB_ENV
-          fi
-        else
-          echo "❌ No packages found, semantic-release may not have triggered a release"
-          echo "packages_exist=false" >> $GITHUB_ENV
-        fi
-
-    - name: Validate PyPI token availability
-      if: (steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch') && env.packages_exist == 'true'
-      env:
-        PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        echo "🔐 Validating PYPI_API_TOKEN secret..."
-        if [ -z "$PYPI_TOKEN" ]; then
-          echo "❌ PYPI_API_TOKEN secret is not configured in GitHub repository"
-          echo ""
-          echo "To fix this:"
-          echo "  1. Go to: https://github.com/mindhiveoy/pyopenapi_gen/settings/secrets/actions"
-          echo "  2. Click 'New repository secret'"
-          echo "  3. Name: PYPI_API_TOKEN"
-          echo "  4. Value: your PyPI token (starts with pypi-)"
-          echo ""
-          echo "Your PyPI token should be the same one that works locally."
-          exit 1
-        fi
-        
-        # Validate token format
-        if [[ ! "$PYPI_TOKEN" =~ ^pypi- ]]; then
-          echo "⚠️ Token doesn't start with 'pypi-' - this may be incorrect"
-          echo "Token length: ${#PYPI_TOKEN} characters"
-        else
-          echo "✅ Token format looks correct (pypi-...)"
-          echo "✅ Token length: ${#PYPI_TOKEN} characters"
-        fi
-
-    - name: Publish to PyPI with twine
-      if: (steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch') && env.packages_exist == 'true'
-      timeout-minutes: 10
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        echo "🚀 Publishing to PyPI with twine..."
-        
-        echo "✅ Token configured (length: ${#TWINE_PASSWORD})"
-        echo "📦 Checking packages..."
-        poetry run twine check dist/*
-        
-        echo "🔗 Testing PyPI connectivity..."
-        curl -I https://upload.pypi.org/legacy/ || {
-          echo "⚠️ PyPI upload endpoint not reachable"
-          exit 1
-        }
-        
-        echo "📤 Uploading to PyPI with timeout protection..."
-        timeout 300 poetry run twine upload \
-          --username "$TWINE_USERNAME" \
-          --password "$TWINE_PASSWORD" \
-          --verbose \
-          --disable-progress-bar \
-          dist/* || {
-          echo "❌ Upload failed or timed out after 5 minutes"
-          echo "This could be due to:"
-          echo "  - Network connectivity issues"
-          echo "  - PyPI rate limiting"
-          echo "  - Invalid token permissions"
-          echo "  - Package already exists (version conflict)"
-          exit 1
-        }
-
-    - name: Run semantic-release publish (GitHub release only)
-      if: steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch'
-      id: semantic_release_publish
-      continue-on-error: true
-      env:
-        GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-      run: |
-        echo "📝 Creating GitHub release with semantic-release..."
-        poetry run semantic-release publish
-
-    - name: Fallback - Create GitHub release manually
-      if: |
-        (steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch') &&
-        steps.semantic_release_publish.outcome == 'failure'
-      env:
-        GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-      run: |
-        echo "⚠️ semantic-release publish failed, creating release manually..."
-
-        # Get the version that was just tagged
-        LATEST_TAG=$(git describe --tags --abbrev=0)
-        PREV_TAG=$(git describe --tags --abbrev=0 ${LATEST_TAG}^ 2>/dev/null || echo "")
-
-        echo "Creating release for ${LATEST_TAG} (previous: ${PREV_TAG})"
-
-        # Generate simplified release notes from git log
-        if [ -n "$PREV_TAG" ]; then
-          COMMITS=$(git log ${PREV_TAG}..${LATEST_TAG} --oneline --no-merges)
-        else
-          COMMITS=$(git log ${LATEST_TAG} --oneline --no-merges)
-        fi
-
-        # Extract fix: and feat: commits for release notes
-        FIXES=$(echo "$COMMITS" | grep -E "^[a-f0-9]+ fix" || echo "")
-        FEATURES=$(echo "$COMMITS" | grep -E "^[a-f0-9]+ feat" || echo "")
-        DEPS=$(echo "$COMMITS" | grep -E "^[a-f0-9]+ (chore\(deps|deps)" | head -10 || echo "")
-
-        # Build release body
-        BODY="## What's Changed"$'\n\n'
-
-        if [ -n "$FEATURES" ]; then
-          BODY+="### Features"$'\n'
-          echo "$FEATURES" | while read line; do
-            BODY+="- ${line#* }"$'\n'
-          done
-          BODY+=$'\n'
-        fi
-
-        if [ -n "$FIXES" ]; then
-          BODY+="### Bug Fixes"$'\n'
-          echo "$FIXES" | while read line; do
-            BODY+="- ${line#* }"$'\n'
-          done
-          BODY+=$'\n'
-        fi
-
-        if [ -n "$DEPS" ]; then
-          BODY+="### Dependencies"$'\n'
-          echo "$DEPS" | while read line; do
-            MSG="${line#* }"
-            # Extract package name and version from commit message
-            if [[ "$MSG" =~ bump\ ([^\ ]+)\ from\ ([0-9.]+)\ to\ ([0-9.]+) ]]; then
-              BODY+="- Bump ${BASH_REMATCH[1]} from ${BASH_REMATCH[2]} to ${BASH_REMATCH[3]}"$'\n'
-            else
-              BODY+="- ${MSG}"$'\n'
-            fi
-          done
-          BODY+=$'\n'
-        fi
-
-        if [ -n "$PREV_TAG" ]; then
-          BODY+="**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${LATEST_TAG}"
-        fi
-
-        # Create release using gh CLI
-        echo "Creating release with gh CLI..."
-        echo "$BODY" | gh release create "${LATEST_TAG}" \
-          --title "${LATEST_TAG}" \
-          --notes-file - \
-          || {
-            echo "❌ Failed to create release with gh CLI"
-            exit 1
-          }
-
-        echo "✅ Manually created GitHub release for ${LATEST_TAG}"
 
     - name: Get release version
       if: (steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch')
@@ -337,108 +115,16 @@ jobs:
         echo "released_version=$LATEST_TAG" >> $GITHUB_OUTPUT
         echo "Released version: $LATEST_TAG"
 
-    # Back-merge the release commits (version bump + CHANGELOG) from main into the
-    # long-lived branches. develop/staging are protected, so we CANNOT push to them
-    # directly (GH006: protected branch update failed) — instead we open a PR and let
-    # it be reviewed/merged. The release commits are chore(release):, which do not
-    # trigger a new release, so the back-merge PR is safe.
-    #
-    # IMPORTANT: the PR MUST be opened by a non-Actions identity. A PR opened with the
-    # default GITHUB_TOKEN does not emit a `pull_request` event (GitHub's recursion
-    # guard), so the required checks (test / security-scan / quality-checks) never run
-    # and the PR is stuck forever against branches with enforce_admins + required
-    # checks. SEMANTIC_RELEASE_TOKEN must therefore be a fine-grained PAT (Contents:write
-    # + Pull requests:write) or a GitHub App token — never the fallback GITHUB_TOKEN.
-    - name: Back-merge release into develop and staging
+    - name: Create release summary
       if: success() && steps.get_version.outputs.released_version != ''
       env:
-        SEMANTIC_RELEASE_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN }}
-        GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         RELEASED_VERSION: ${{ steps.get_version.outputs.released_version }}
-      run: |
-        set -euo pipefail
-
-        # Fail loudly instead of silently opening a PR that can never pass its checks.
-        if [ -z "${SEMANTIC_RELEASE_TOKEN}" ]; then
-          echo "::error title=Missing SEMANTIC_RELEASE_TOKEN::Back-merge aborted. A PR opened with the default GITHUB_TOKEN does not trigger the required pull_request checks, so it can never merge into the protected develop/staging branches. Configure a SEMANTIC_RELEASE_TOKEN secret (fine-grained PAT with Contents:write + Pull requests:write, or a GitHub App token)."
-          exit 1
-        fi
-
-        git fetch origin main --quiet
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-        open_backmerge_pr() {
-          local target="$1"
-
-          if ! git ls-remote --exit-code --heads origin "$target" >/dev/null 2>&1; then
-            echo "ℹ️ '$target' branch doesn't exist, skipping"
-            return 0
-          fi
-
-          git fetch origin "$target" --quiet
-
-          # Nothing to do if the target already contains main's HEAD.
-          if git merge-base --is-ancestor origin/main "origin/$target"; then
-            echo "✅ '$target' already contains main, nothing to back-merge"
-            return 0
-          fi
-
-          # Deterministic head branch so reruns reuse (not duplicate) the PR.
-          local branch="chore/backmerge-${RELEASED_VERSION}-to-${target}"
-          local existing
-          existing=$(gh pr list --base "$target" --head "$branch" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$existing" ]; then
-            echo "ℹ️ Back-merge PR into '$target' already open: #$existing"
-            return 0
-          fi
-
-          # Build the head branch from main, then merge the target INTO it. This is
-          # what satisfies the branch protection "strict / require branches up to date"
-          # rule — a bare `--head main` is out-of-date whenever the target has moved on
-          # and would be blocked from merging even with checks green.
-          # main's only unique commits are chore(release): (version bump + CHANGELOG),
-          # so a conflict is unexpected; if one occurs, stop and let a human resolve it.
-          git checkout -B "$branch" origin/main
-          if ! git merge --no-edit "origin/$target"; then
-            git merge --abort || true
-            echo "::error title=Back-merge conflict::Merging '$target' into '$branch' hit a conflict. Resolve it manually and open the PR by hand."
-            return 1
-          fi
-          git push --force-with-lease origin "$branch"
-
-          local url
-          url=$(gh pr create \
-            --base "$target" \
-            --head "$branch" \
-            --title "chore: back-merge release ${RELEASED_VERSION} into ${target}" \
-            --body "Automated back-merge of release **${RELEASED_VERSION}** from \`main\` into \`${target}\` (version bump + CHANGELOG). Contains only \`chore(release)\` commits, so it will not trigger a new release.")
-          echo "✅ Opened back-merge PR into '$target': $url"
-          # Labels are best-effort (they may not exist in the repo).
-          gh pr edit "$url" --add-label "automated" --add-label "version-sync" 2>/dev/null \
-            || echo "(labels not applied — 'automated'/'version-sync' may not exist)"
-          # Auto-merge once the required checks pass (best-effort: needs "Allow
-          # auto-merge" enabled on the repo).
-          gh pr merge "$url" --auto --merge 2>/dev/null \
-            || echo "(auto-merge not enabled — merge the PR manually once checks pass)"
-        }
-
-        echo "🔄 Opening back-merge PR: main → develop..."
-        open_backmerge_pr develop
-        echo "🔄 Opening back-merge PR: main → staging..."
-        open_backmerge_pr staging
-
-    - name: Create release summary
-      if: success()
+        REPO_URL: ${{ github.server_url }}/${{ github.repository }}
       run: |
         echo "## 🚀 Release Published" >> $GITHUB_STEP_SUMMARY
-        echo "- **Version**: ${{ steps.get_version.outputs.released_version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **PyPI**: [pyopenapi-gen ${{ steps.get_version.outputs.released_version }}](https://pypi.org/project/pyopenapi-gen/${{ steps.get_version.outputs.released_version }})" >> $GITHUB_STEP_SUMMARY
-        echo "- **GitHub Release**: [Release Notes](https://github.com/mindhiveoy/pyopenapi_gen/releases/tag/${{ steps.get_version.outputs.released_version }})" >> $GITHUB_STEP_SUMMARY
-        
-        if [ -n "${{ steps.get_version.outputs.released_version }}" ]; then
-          echo "- **Branch Sync**: Back-merge PR(s) opened into develop/staging (review & merge to sync the version + CHANGELOG)" >> $GITHUB_STEP_SUMMARY
-        fi
+        echo "- **Version**: ${RELEASED_VERSION}" >> $GITHUB_STEP_SUMMARY
+        echo "- **GitHub Release**: [Release Notes](${REPO_URL}/releases/tag/${RELEASED_VERSION})" >> $GITHUB_STEP_SUMMARY
+        echo "- **Run it**: \`uvx --from git+${REPO_URL}@${RELEASED_VERSION} pyopenapi-gen --help\`" >> $GITHUB_STEP_SUMMARY
 
   notify-completion:
     needs: release

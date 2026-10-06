@@ -1,191 +1,125 @@
-# Release Automation with Semantic Versioning
+# Release Process
 
-## Overview
+## Why
 
-This project uses **semantic-release** to automatically bump versions, generate changelogs, and publish to PyPI based on conventional commit messages. This ensures that bug fixes and new features are automatically released to users without manual intervention.
+`pyopenapi-gen` is a generation-time tool: generated clients never import it, so there is nothing to install into an application at runtime. That means a release only needs to be an immutable, addressable point in git history. Running the generator straight from GitHub with [`uvx`](https://docs.astral.sh/uv/guides/tools/) removes the need for a package index, publishing credentials, promotion branches, and the back-merges that kept those branches in sync.
 
-## How It Works
+## What
 
-### 1. Conventional Commits Trigger Releases
+`develop` is the default branch and the only long-lived branch:
 
-When you push commits to the `main` branch with conventional commit prefixes, they automatically trigger version bumps:
+- Every pull request targets `develop`, and all CI runs against it.
+- Every merge into `develop` runs `.github/workflows/semantic-release.yml`, which cuts a release when there are release-worthy commits since the last tag.
+- A release is a `vX.Y.Z` git tag plus a GitHub release with notes. Nothing is built or uploaded anywhere.
 
-- `fix:` → Patch release (0.12.0 → 0.12.1)
-- `feat:` → Minor release (0.12.0 → 0.13.0)
-- `BREAKING CHANGE:` → Major release (0.12.0 → 1.0.0)
-
-Other prefixes (`docs:`, `style:`, `refactor:`, `test:`, `chore:`) do not trigger releases.
-
-### 2. Automatic Version Bumping
-
-The GitHub Actions workflow (`semantic-release.yml`) runs on every push to main:
-
-1. **Checks for release-worthy commits** since the last tag
-2. **Runs semantic-release** to determine the next version
-3. **Updates version** in:
-   - `pyproject.toml` (project.version)
-   - `pyproject.toml` (tool.commitizen.version)
-   - `src/pyopenapi_gen/__init__.py` (__version__)
-4. **Generates CHANGELOG.md** from commit messages
-5. **Creates git tag** (e.g., v0.12.1)
-6. **Commits changes** with message "chore(release): {version}"
-
-### 3. Package Building and Publishing
-
-After version bump:
-
-1. **Builds packages** using `python -m build`
-2. **Validates PyPI token** (PYPI_API_TOKEN secret)
-3. **Publishes to PyPI** using twine
-4. **Creates GitHub release** with changelog
-5. **Syncs branches** (main → staging → develop)
-
-## Example: The v0.12.1 Release
-
-Here's how the v0.12.1 hotfix was automatically released:
-
-### Step 1: Fix Was Committed
-```bash
-git commit -m "fix(parser): register inline enum array parameters in parsed_schemas
-
-Critical fix for inline enum array parameters not generating importable model files.
-
-Root cause:
-- Inline enum schemas in array parameters were created but never registered
-- Missing final_module_stem attribute prevented proper import generation  
-- Generated clients failed with NameError when importing enum types
-
-Solution:
-- Register inline enum schemas in context.parsed_schemas
-- Set final_module_stem for proper import path generation
-- Add comprehensive test coverage for inline enum parameters
-
-Impact:
-- All inline enum array parameters now generate proper model files
-- Generated clients can be imported without NameError
-- Fixes business_swagger.json generation issues"
+```mermaid
+graph LR
+    A[PR merged into develop] --> B{feat / fix / perf / BREAKING CHANGE<br/>since the last tag?}
+    B -- no --> C[No release]
+    B -- yes --> D[Bump version files<br/>and CHANGELOG.md]
+    D --> E["Commit chore(release): X.Y.Z<br/>and tag vX.Y.Z on develop"]
+    E --> F[Create GitHub release]
+    F --> G["uvx --from git+...@vX.Y.Z"]
 ```
 
-### Step 2: Push to Main Triggered Workflow
+### Commit prefixes decide the version
+
+Releases are driven entirely by [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Commit                            | Release               |
+| --------------------------------- | --------------------- |
+| `fix:` / `perf:`                  | Patch (5.1.12 → 5.1.13) |
+| `feat:`                           | Minor (5.1.12 → 5.2.0)  |
+| `BREAKING CHANGE:` in the body    | Major (5.1.12 → 6.0.0)  |
+| `docs:`, `test:`, `chore:`, etc.  | No release            |
+
+Never write `chore(release):` commits by hand. That prefix is reserved for the release commit, and the workflow skips any push whose head commit uses it.
+
+### What the release workflow changes
+
+`semantic-release version` does all of the work in one step:
+
+1. Computes the next version from the commits since the last `v*` tag.
+2. Updates the version in `pyproject.toml` (`project.version` and `tool.commitizen.version`) and in `src/pyopenapi_gen/__init__.py` (`__version__`).
+3. Adds an entry to `CHANGELOG.md`.
+4. Commits `chore(release): X.Y.Z` and tags it `vX.Y.Z`.
+5. Pushes the commit and tag to `develop`.
+6. Creates the GitHub release from the changelog entry.
+
+Because the release commit lands directly on `develop`, there is no other branch to sync.
+
+## How
+
+### Running a release
+
 ```bash
-git push origin main
+# Pinned to a release tag (recommended)
+uvx --from git+https://github.com/jeffmay/pyopenapi_gen@v5.1.12 pyopenapi-gen openapi.yaml \
+  --project-root . \
+  --output-package my_api_client
+
+# Unreleased changes on develop, or any other branch
+uvx --refresh --from git+https://github.com/jeffmay/pyopenapi_gen@develop pyopenapi-gen --help
 ```
 
-### Step 3: Automatic Processing
-1. Workflow detected `fix:` commit since v0.12.0
-2. Semantic-release bumped version to 0.12.1
-3. Updated all version files
-4. Generated changelog entry
-5. Built and published to PyPI
-6. Created GitHub release
-7. Synced to staging and develop branches
+`uv` caches the tool environment, so pass `--refresh` when using a branch name to make sure the newest commit is picked up. Tags never move, so a pinned tag doesn't need it.
 
-### Step 4: Users Get Update
+To use the programmatic API, add the generator as a git dependency instead:
+
 ```bash
-pip install --upgrade pyopenapi-gen
-# Automatically gets v0.12.1 with the fix
+uv add git+https://github.com/jeffmay/pyopenapi_gen --tag v5.1.12
+poetry add git+https://github.com/jeffmay/pyopenapi_gen.git#v5.1.12
 ```
 
-## Configuration
+### Configuration
 
-### pyproject.toml
+The release branch is set in `pyproject.toml`:
+
 ```toml
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version", "pyproject.toml:tool.commitizen.version"]
-version_pattern = [
-    "src/pyopenapi_gen/__init__.py:__version__: str = \"{version}\""
+version_variables = [
+    "src/pyopenapi_gen/__init__.py:__version__"
 ]
-branch = "main"
-upload_to_pypi = false  # We use twine instead
-upload_to_repository = false
 commit_message = "chore(release): {version}"
-tag_commit = true
-changelog_file = "CHANGELOG.md"
-hvcs = "github"
 commit_parser = "conventional"
 major_on_zero = false
+
+[tool.semantic_release.branches.develop]
+match = "^develop$"
 ```
 
-### GitHub Secrets Required
-- `PYPI_API_TOKEN`: PyPI token for publishing (starts with `pypi-`)
-- `SEMANTIC_RELEASE_TOKEN` (optional): GitHub token with push permissions
+To move releases to a different branch later, change the `match` above and the `branches:` filters in `ci.yml`, `pr-checks.yml`, and `semantic-release.yml`.
 
-## Best Practices
+### Required secret
 
-### 1. Write Clear Commit Messages
+`SEMANTIC_RELEASE_TOKEN` is a repository secret holding a fine-grained personal access token or GitHub App token with **Contents: write**. The workflow pushes the release commit and tag straight to `develop`, so the identity behind that token must be allowed to bypass `develop`'s pull request requirement (see [Branch Protection](../.github/BRANCH_PROTECTION.md)). Without the secret the workflow falls back to `GITHUB_TOKEN`, which can only push if `develop` accepts direct pushes from GitHub Actions.
+
+### One-time setup: tags must exist on the remote
+
+semantic-release finds the previous release by looking for `v*` tags in `develop`'s history. If none are present it starts from `0.0.0` and the next release would be `v1.0.0`. Make sure the existing release tags are on the remote before the first release runs:
+
 ```bash
-# Good - triggers patch release
-fix(parser): resolve circular reference in schema parsing
-
-# Good - triggers minor release  
-feat(cli): add --dry-run option for testing
-
-# Good - triggers major release
-feat(api): redesign authentication system
-
-BREAKING CHANGE: AuthPlugin interface changed
+git tag -l 'v*' | grep -v dev | xargs git push origin
 ```
 
-### 2. Group Related Changes
+### Manual release
+
 ```bash
-# Instead of multiple commits:
-fix: update import
-fix: handle None case
-fix: add test
-
-# Use one semantic commit:
-fix(module): handle None values in import resolution
-
-- Update import logic
-- Add None value handling
-- Add comprehensive tests
+gh workflow run semantic-release.yml --ref develop
 ```
 
-### 3. Non-Release Commits
+### Checking release status
+
 ```bash
-# These don't trigger releases:
-style: apply Black formatting
-docs: update README
-chore: update dependencies
-test: add edge case coverage
-refactor: simplify logic
-```
-
-## Troubleshooting
-
-### Version Not Bumping?
-1. Check commit has `fix:`, `feat:`, or `BREAKING CHANGE:`
-2. Ensure pushing to `main` branch
-3. Check workflow passed all quality gates
-4. Verify no version conflict with PyPI
-
-### Manual Release
-```bash
-# Trigger workflow manually from GitHub Actions UI
-# Or use workflow_dispatch:
-gh workflow run semantic-release.yml
-```
-
-### Check Release Status
-```bash
-# View recent workflow runs
 gh run list --workflow=semantic-release.yml
-
-# Check PyPI for latest version
-curl -s https://pypi.org/pypi/pyopenapi-gen/json | jq .info.version
-
-# Check git tags
-git fetch --tags
-git tag | tail -5
+gh release list --limit 5
+git fetch --tags && git tag --sort=-v:refname | head -5
 ```
 
-## Benefits
+### Troubleshooting
 
-1. **Zero Manual Intervention**: Fix → Push → Released
-2. **Consistent Versioning**: Follows semantic versioning strictly
-3. **Automatic Changelog**: Generated from commit messages
-4. **Immediate Availability**: Users get fixes within minutes
-5. **Branch Synchronization**: All branches stay up-to-date
-6. **Quality Gates**: Only releases if all tests pass
-
-This automation ensures that critical fixes like the inline enum parameter issue are immediately available to users without waiting for manual release processes.
+- **No new version after a merge**: check that at least one commit since the last tag uses `feat:`, `fix:`, `perf:`, or a `BREAKING CHANGE:` footer.
+- **`branch '...' isn't in any release groups`**: the workflow ran on a branch other than `develop`. Releases only come from the branch matched in `[tool.semantic_release.branches]`.
+- **`GH006: Protected branch update failed`**: the token behind `SEMANTIC_RELEASE_TOKEN` isn't allowed to push directly to `develop`.
+- **First release jumped to `v1.0.0`**: the remote had no `v*` tags. See the one-time setup above.

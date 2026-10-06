@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   pull_request:
-    branches: [main, develop, staging]
+    branches: [develop]
     # Run on PRs to provide required "test" status check for branch protection
     # Actual testing is handled by pr-checks.yml, this just satisfies the requirement
 
@@ -21,6 +21,6 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "PR testing is handled by pr-checks.yml workflow"
           else
-            echo "Main branch testing is handled by semantic-release.yml workflow"
+            echo "Changes on develop were tested by pr-checks.yml before merging"
           fi
           echo "This minimal workflow prevents branch protection conflicts"

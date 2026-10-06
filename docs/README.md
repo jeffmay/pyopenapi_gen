@@ -8,6 +8,7 @@ Welcome to the PyOpenAPI Generator documentation! This directory contains compre
 - **[Main README](../README.md)** - Project overview, installation, and quick start
 - **[Contributing Guide](../CONTRIBUTING.md)** - How to contribute to the project
 - **[Changelog](../CHANGELOG.md)** - Version history and release notes
+- **[Release Process](release-automation.md)** - How releases are cut from `develop` and run with `uvx`
 
 ### Architecture & Design
 - **[Architecture Overview](architecture.md)** - System design and three-stage pipeline
