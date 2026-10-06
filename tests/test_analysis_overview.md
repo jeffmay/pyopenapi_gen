@@ -42,6 +42,7 @@ tests/
 │   │   ├── test_cycle_detection.py (Analyzed)
 │   │   ├── test_cycle_helpers.py (Analyzed)
 │   │   ├── test_improved_schema_naming.py (Analyzed)
+│   │   ├── test_inline_composition_member_naming.py (Analyzed)
 │   │   ├── test_inline_enum_extractor.py (Analyzed)
 │   │   ├── test_inline_object_promoter.py (Analyzed)
 │   │   ├── test_logging.py (Analyzed)
@@ -80,6 +81,7 @@ tests/
 │   ├── test_docs_emitter.py (Analyzed)
 │   ├── dcg_models/
 │   │   ├── test_dcg_ir_to_openapi.py (Analyzed)
+│   │   ├── test_dcg_literal_enums.py (Analyzed)
 │   │   ├── test_dcg_model_backend.py (Analyzed)
 │   │   └── test_dcg_renderer.py (Analyzed)
 │   ├── test_duplicate_operations.py (Analyzed)
