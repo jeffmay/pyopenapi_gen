@@ -23,7 +23,7 @@ from pyopenapi_gen.emitters.exceptions_emitter import ExceptionsEmitter
 from pyopenapi_gen.emitters.mocks_emitter import MocksEmitter
 from pyopenapi_gen.emitters.models_emitter import ModelsEmitter
 from pyopenapi_gen.generator.exceptions import GenerationError
-from pyopenapi_gen.ir import ModelBackend, NamingStrategy
+from pyopenapi_gen.ir import ModelBackend, ModelType, NamingStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,7 @@ class ClientGenerator:
         core_package: str | None = None,
         naming_strategy: NamingStrategy = NamingStrategy.OPERATION_ID,
         model_backend: ModelBackend = ModelBackend.LEGACY,
+        model_type: ModelType = ModelType.DATACLASS,
     ) -> List[Path]:
         """Generate the client code from the OpenAPI spec.
 
@@ -105,10 +106,14 @@ class ClientGenerator:
             core_package: Python package path for the core package.
             naming_strategy: Strategy for deriving method names from operations.
             model_backend: Which implementation renders the ``models/`` package.
+            model_type: Kind of class generated for objects; ``pydantic`` requires the ``dcg`` model backend.
 
         Raises:
-            GenerationError: If generation fails or diffs are found (when not forcing overwrite).
+            GenerationError: If generation fails or diffs are found (when not forcing overwrite), or if
+                ``model_type`` is ``pydantic`` without the ``dcg`` model backend.
         """
+        if model_type is ModelType.PYDANTIC and model_backend is not ModelBackend.DCG:
+            raise GenerationError("model_type 'pydantic' requires model_backend 'dcg'.")
         self._log_progress(f"Starting code generation for specification: {spec_path}", "GENERATION")
         project_root = Path(project_root).resolve()
 
@@ -244,6 +249,7 @@ class ClientGenerator:
                     parsed_schemas=ir.schemas,
                     discriminator_skip_list=ir.discriminator_skip_list,
                     model_backend=model_backend,
+                    model_type=model_type,
                 )
                 model_files_dict = models_emitter.emit(
                     ir, str(tmp_out_dir_for_diff)
@@ -417,6 +423,7 @@ class ClientGenerator:
                 parsed_schemas=ir.schemas,
                 discriminator_skip_list=ir.discriminator_skip_list,
                 model_backend=model_backend,
+                model_type=model_type,
             )
             model_files_dict = models_emitter.emit(ir, str(out_dir))
             generated_files += [
