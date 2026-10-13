@@ -23,7 +23,7 @@ make test-fast      # Stop on first failure
 
 ## Commit Conventions
 
-PRs target `develop`. Merging a release-worthy commit into `develop` tags `vX.Y.Z` and creates a GitHub release; there is no PyPI publishing, and users run a tag with `uvx --from git+https://github.com/jeffmay/pyopenapi_gen@vX.Y.Z pyopenapi-gen`. See `docs/release-automation.md`.
+PRs target `main`. Merging a release-worthy commit into `main` tags `vX.Y.Z` and creates a GitHub release; there is no PyPI publishing, and users run a tag with `uvx --from git+https://github.com/jeffmay/pyopenapi_gen@vX.Y.Z pyopenapi-gen`. See `docs/release-automation.md`.
 
 **NEVER use `chore(release):`** - reserved for semantic-release bot.
 

@@ -368,7 +368,7 @@ Fixes #123
 
 ### Pull Request Process
 
-Open pull requests against `develop`, the default and only long-lived branch.
+Open pull requests against `main`, the default and only long-lived branch.
 
 1. **Before Creating PR:**
    ```bash
@@ -419,7 +419,7 @@ Open pull requests against `develop`, the default and only long-lived branch.
 - [ ] Documentation updated for new features
 - [ ] Conventional commit messages and a clear PR description
 - [ ] No breaking changes without migration guide
-- [ ] Branch is up to date with `develop`
+- [ ] Branch is up to date with `main`
 
 ## 🏗️ Project Architecture
 
@@ -491,9 +491,9 @@ When making architectural changes:
 
 ## 🔖 Release Process
 
-Releases are fully automated and cut from `develop`. There is no package index, staging branch, or back-merge; a release is a `vX.Y.Z` git tag plus a GitHub release, and people run it with `uvx --from git+https://github.com/jeffmay/pyopenapi_gen@vX.Y.Z pyopenapi-gen`.
+Releases are fully automated and cut from `main`. There is no package index, staging branch, or back-merge; a release is a `vX.Y.Z` git tag plus a GitHub release, and people run it with `uvx --from git+https://github.com/jeffmay/pyopenapi_gen@vX.Y.Z pyopenapi-gen`.
 
-When a pull request is merged into `develop`, the release workflow looks at the commits since the last tag and follows [Semantic Versioning](https://semver.org/):
+When a pull request is merged into `main`, the release workflow looks at the commits since the last tag and follows [Semantic Versioning](https://semver.org/):
 
 - **MAJOR** (e.g., 5.1.12 → 6.0.0): a `BREAKING CHANGE:` footer
 - **MINOR** (e.g., 5.1.12 → 5.2.0): a `feat:` commit
@@ -501,7 +501,7 @@ When a pull request is merged into `develop`, the release workflow looks at the 
 
 Other prefixes (`docs:`, `test:`, `chore:`, `refactor:`, ...) don't trigger a release on their own.
 
-The workflow then bumps the version in `pyproject.toml` and `src/pyopenapi_gen/__init__.py`, writes the `CHANGELOG.md` entry from the commit messages, commits and tags the result on `develop`, and creates the GitHub release. As a contributor you don't need to do anything beyond writing good conventional commits:
+The workflow then bumps the version in `pyproject.toml` and `src/pyopenapi_gen/__init__.py`, writes the `CHANGELOG.md` entry from the commit messages, commits and tags the result on `main`, and creates the GitHub release. As a contributor you don't need to do anything beyond writing good conventional commits:
 
 - Don't edit version numbers or `CHANGELOG.md` by hand.
 - Don't use the `chore(release):` prefix; it's reserved for the release commit.

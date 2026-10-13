@@ -61,10 +61,10 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/jeffmay/pyopenapi_gen"
-Documentation = "https://github.com/jeffmay/pyopenapi_gen/blob/develop/README.md"
+Documentation = "https://github.com/jeffmay/pyopenapi_gen/blob/main/README.md"
 Repository = "https://github.com/jeffmay/pyopenapi_gen"
 Issues = "https://github.com/jeffmay/pyopenapi_gen/issues"
-Changelog = "https://github.com/jeffmay/pyopenapi_gen/blob/develop/CHANGELOG.md"
+Changelog = "https://github.com/jeffmay/pyopenapi_gen/blob/main/CHANGELOG.md"
 "Bug Reports" = "https://github.com/jeffmay/pyopenapi_gen/issues"
 "Source Code" = "https://github.com/jeffmay/pyopenapi_gen"
 
@@ -169,8 +169,8 @@ commit_message = "chore(release): {version}"
 commit_parser = "conventional"
 major_on_zero = false
 
-[tool.semantic_release.branches.develop]
-match = "^develop$"
+[tool.semantic_release.branches.main]
+match = "^main$"
 
 [tool.semantic_release.remote]
 type = "github"

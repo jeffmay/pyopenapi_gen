@@ -34,7 +34,7 @@ If the issue is with generated code, please include relevant snippets:
 **Environment:**
  - OS: [e.g. macOS, Ubuntu 20.04]
  - Python version: [e.g. 3.12.0]
- - PyOpenAPI Generator version: [git tag or branch you ran, e.g. v5.1.12 or develop]
+ - PyOpenAPI Generator version: [git tag or branch you ran, e.g. v5.1.12 or main]
 
 **Command used:**
 ```bash
