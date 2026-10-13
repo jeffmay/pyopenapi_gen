@@ -6,18 +6,18 @@
 
 ## What
 
-`develop` is the default branch and the only long-lived branch:
+`main` is the default branch and the only long-lived branch:
 
-- Every pull request targets `develop`, and all CI runs against it.
-- Every merge into `develop` runs `.github/workflows/semantic-release.yml`, which cuts a release when there are release-worthy commits since the last tag.
+- Every pull request targets `main`, and all CI runs against it.
+- Every merge into `main` runs `.github/workflows/semantic-release.yml`, which cuts a release when there are release-worthy commits since the last tag.
 - A release is a `vX.Y.Z` git tag plus a GitHub release with notes. Nothing is built or uploaded anywhere.
 
 ```mermaid
 graph LR
-    A[PR merged into develop] --> B{feat / fix / perf / BREAKING CHANGE<br/>since the last tag?}
+    A[PR merged into main] --> B{feat / fix / perf / BREAKING CHANGE<br/>since the last tag?}
     B -- no --> C[No release]
     B -- yes --> D[Bump version files<br/>and CHANGELOG.md]
-    D --> E["Commit chore(release): X.Y.Z<br/>and tag vX.Y.Z on develop"]
+    D --> E["Commit chore(release): X.Y.Z<br/>and tag vX.Y.Z on main"]
     E --> F[Create GitHub release]
     F --> G["uvx --from git+...@vX.Y.Z"]
 ```
@@ -43,10 +43,10 @@ Never write `chore(release):` commits by hand. That prefix is reserved for the r
 2. Updates the version in `pyproject.toml` (`project.version` and `tool.commitizen.version`) and in `src/pyopenapi_gen/__init__.py` (`__version__`).
 3. Adds an entry to `CHANGELOG.md`.
 4. Commits `chore(release): X.Y.Z` and tags it `vX.Y.Z`.
-5. Pushes the commit and tag to `develop`.
+5. Pushes the commit and tag to `main`.
 6. Creates the GitHub release from the changelog entry.
 
-Because the release commit lands directly on `develop`, there is no other branch to sync.
+Because the release commit lands directly on `main`, there is no other branch to sync.
 
 ## How
 
@@ -58,8 +58,8 @@ uvx --from git+https://github.com/jeffmay/pyopenapi_gen@v5.1.12 pyopenapi-gen op
   --project-root . \
   --output-package my_api_client
 
-# Unreleased changes on develop, or any other branch
-uvx --refresh --from git+https://github.com/jeffmay/pyopenapi_gen@develop pyopenapi-gen --help
+# Unreleased changes on main, or any other branch
+uvx --refresh --from git+https://github.com/jeffmay/pyopenapi_gen@main pyopenapi-gen --help
 ```
 
 `uv` caches the tool environment, so pass `--refresh` when using a branch name to make sure the newest commit is picked up. Tags never move, so a pinned tag doesn't need it.
@@ -85,19 +85,19 @@ commit_message = "chore(release): {version}"
 commit_parser = "conventional"
 major_on_zero = false
 
-[tool.semantic_release.branches.develop]
-match = "^develop$"
+[tool.semantic_release.branches.main]
+match = "^main$"
 ```
 
 To move releases to a different branch later, change the `match` above and the `branches:` filters in `ci.yml`, `pr-checks.yml`, and `semantic-release.yml`.
 
 ### Required secret
 
-`SEMANTIC_RELEASE_TOKEN` is a repository secret holding a fine-grained personal access token or GitHub App token with **Contents: write**. The workflow pushes the release commit and tag straight to `develop`, so the identity behind that token must be allowed to bypass `develop`'s pull request requirement (see [Branch Protection](../.github/BRANCH_PROTECTION.md)). Without the secret the workflow falls back to `GITHUB_TOKEN`, which can only push if `develop` accepts direct pushes from GitHub Actions.
+`SEMANTIC_RELEASE_TOKEN` is a repository secret holding a fine-grained personal access token or GitHub App token with **Contents: write**. The workflow pushes the release commit and tag straight to `main`, so the identity behind that token must be allowed to bypass `main`'s pull request requirement (see [Branch Protection](../.github/BRANCH_PROTECTION.md)). Without the secret the workflow falls back to `GITHUB_TOKEN`, which can only push if `main` accepts direct pushes from GitHub Actions.
 
 ### One-time setup: tags must exist on the remote
 
-semantic-release finds the previous release by looking for `v*` tags in `develop`'s history. If none are present it starts from `0.0.0` and the next release would be `v1.0.0`. Make sure the existing release tags are on the remote before the first release runs:
+semantic-release finds the previous release by looking for `v*` tags in `main`'s history. If none are present it starts from `0.0.0` and the next release would be `v1.0.0`. Make sure the existing release tags are on the remote before the first release runs:
 
 ```bash
 git tag -l 'v*' | grep -v dev | xargs git push origin
@@ -106,7 +106,7 @@ git tag -l 'v*' | grep -v dev | xargs git push origin
 ### Manual release
 
 ```bash
-gh workflow run semantic-release.yml --ref develop
+gh workflow run semantic-release.yml --ref main
 ```
 
 ### Checking release status
@@ -120,6 +120,6 @@ git fetch --tags && git tag --sort=-v:refname | head -5
 ### Troubleshooting
 
 - **No new version after a merge**: check that at least one commit since the last tag uses `feat:`, `fix:`, `perf:`, or a `BREAKING CHANGE:` footer.
-- **`branch '...' isn't in any release groups`**: the workflow ran on a branch other than `develop`. Releases only come from the branch matched in `[tool.semantic_release.branches]`.
-- **`GH006: Protected branch update failed`**: the token behind `SEMANTIC_RELEASE_TOKEN` isn't allowed to push directly to `develop`.
+- **`branch '...' isn't in any release groups`**: the workflow ran on a branch other than `main`. Releases only come from the branch matched in `[tool.semantic_release.branches]`.
+- **`GH006: Protected branch update failed`** or **`GH013: Repository rule violations found`**: the token behind `SEMANTIC_RELEASE_TOKEN` isn't allowed to push directly to `main`. With a ruleset, its identity must be listed as a bypass actor, which also exempts the unsigned release commit from a "Require signed commits" rule.
 - **First release jumped to `v1.0.0`**: the remote had no `v*` tags. See the one-time setup above.

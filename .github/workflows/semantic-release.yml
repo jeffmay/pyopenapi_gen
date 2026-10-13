@@ -2,7 +2,7 @@ name: Semantic Release
 
 on:
   push:
-    branches: [develop]
+    branches: [main]
   workflow_dispatch:
     inputs:
       reason:
@@ -94,9 +94,9 @@ jobs:
           echo "No release-worthy changes found since $LAST_TAG"
         fi
 
-    # Pushes the "chore(release): X.Y.Z" commit and vX.Y.Z tag straight to develop and
+    # Pushes the "chore(release): X.Y.Z" commit and vX.Y.Z tag straight to main and
     # creates the GitHub release, so SEMANTIC_RELEASE_TOKEN must be allowed to push to
-    # develop past its branch protection.
+    # main past its branch protection.
     - name: Run semantic-release version
       if: steps.check_changes.outputs.release_worthy > 0 || github.event_name == 'workflow_dispatch'
       env:

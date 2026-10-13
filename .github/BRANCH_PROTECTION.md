@@ -1,10 +1,10 @@
 # Branch Protection Configuration
 
-This document outlines the GitHub branch protection settings for `develop`, the default and only long-lived branch. All pull requests target `develop`, all CI runs against it, and releases are cut from it (see [Release Process](../docs/release-automation.md)).
+This document outlines the GitHub branch protection settings for `main`, the default and only long-lived branch. All pull requests target `main`, all CI runs against it, and releases are cut from it (see [Release Process](../docs/release-automation.md)).
 
 ## Required Settings
 
-### Branch Protection Rules for `develop`
+### Branch Protection Rules for `main`
 
 1. **Require pull request reviews before merging**
    - Required approving reviews: 1
@@ -36,10 +36,10 @@ This document outlines the GitHub branch protection settings for `develop`, the 
 ## 🔒 Protection Features
 
 ### Release Pushes
-The release workflow (`semantic-release.yml`) pushes a `chore(release): X.Y.Z` commit and a `vX.Y.Z` tag directly to `develop`, without a pull request. The identity behind the `SEMANTIC_RELEASE_TOKEN` secret must therefore be able to bypass the pull request requirement, for example as a bypass actor on a repository ruleset, or as an admin with "Do not allow bypassing the above settings" left unchecked. Nobody else should be able to push to `develop` directly.
+The release workflow (`semantic-release.yml`) pushes a `chore(release): X.Y.Z` commit and a `vX.Y.Z` tag directly to `main`, without a pull request. The identity behind the `SEMANTIC_RELEASE_TOKEN` secret must therefore be able to bypass the pull request requirement, for example as a bypass actor on a repository ruleset, or as an admin with "Do not allow bypassing the above settings" left unchecked. Nobody else should be able to push to `main` directly.
 
 ### Deletion Protection
-`develop` is protected from accidental deletion:
+`main` is protected from accidental deletion:
 - Force pushes are disabled
 - Branch deletion is explicitly forbidden
 
@@ -57,7 +57,7 @@ Every PR must pass all quality checks:
 
 1. Go to your repository on GitHub
 2. Click on **Settings** → **Branches**
-3. Click **Add rule** or edit existing rule for `develop`
+3. Click **Add rule** or edit existing rule for `main`
 4. Configure the settings as outlined above
 5. Save the branch protection rule
 
@@ -84,7 +84,7 @@ cat > branch_protection.json << EOF
 }
 EOF
 
-gh api --method PUT repos/OWNER/REPO/branches/develop/protection --input branch_protection.json
+gh api --method PUT repos/OWNER/REPO/branches/main/protection --input branch_protection.json
 ```
 
 ## Quality Gates Enforced
@@ -112,9 +112,9 @@ The pipeline enforces the following quality gates:
 
 ## Workflow Files
 
-- `.github/workflows/pr-checks.yml`: Quality, security, and integration checks on PRs to `develop`
-- `.github/workflows/ci.yml`: Placeholder `test` check on PRs and pushes to `develop`
-- `.github/workflows/semantic-release.yml`: Cuts a release on pushes to `develop`
+- `.github/workflows/pr-checks.yml`: Quality, security, and integration checks on PRs to `main`
+- `.github/workflows/ci.yml`: Placeholder `test` check on PRs and pushes to `main`
+- `.github/workflows/semantic-release.yml`: Cuts a release on pushes to `main`
 - `.github/workflows/dependabot-poetry-lock-fix.yml`: Resolves `poetry.lock` conflicts on Dependabot PRs
 
 ## Local Development

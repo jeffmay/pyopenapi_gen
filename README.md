@@ -40,7 +40,7 @@ PyOpenAPI Generator isn't published to PyPI. Run it straight from GitHub with [`
 uvx --from git+https://github.com/jeffmay/pyopenapi_gen@v5.1.12 pyopenapi-gen --help
 ```
 
-Use a branch name instead of a tag (for example `@develop`) to try unreleased changes, adding `--refresh` so `uv` picks up the latest commit.
+Use a branch name instead of a tag (for example `@main`) to try unreleased changes, adding `--refresh` so `uv` picks up the latest commit.
 
 To keep `pyopenapi-gen` on your `PATH` so the commands below work as written:
 
